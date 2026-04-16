@@ -1,0 +1,27 @@
+# Core — version-sensitive, pin these
+pinecone-client>=4.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-google-genai>=1.0.0
+langchain-pinecone>=0.1.0
+
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+google-generativeai
+sentence-transformers
+torch
+pypdf
+python-docx
+redis
+hiredis
+structlog
+prometheus-fastapi-instrumentator
+httpx
+aiofiles
+tiktoken
+ollama

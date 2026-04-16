@@ -1,0 +1,231 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .gitignore — RAG Application
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+# ── Environment & Secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+*.env
+
+# Never commit these even if renamed
+*secret*
+*credentials*
+*api_key*
+
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+backend/venv/
+backend/env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+pytestdebug.log
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Distribution
+*.whl
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build output
+dist/
+frontend/dist/
+build/
+
+# Vite
+.vite/
+
+# Package lock (choose one — npm or yarn)
+# yarn.lock
+
+# Local env files (Vite)
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+# Keep docker-compose.yml but ignore override files
+docker-compose.override.yml
+docker-compose.local.yml
+.docker/
+
+
+# ── IDEs & Editors ───────────────────────────────────────────────────────────
+# VSCode
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Cursor
+.cursor/
+
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Icon?
+.AppleDouble
+.LSOverride
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+
+
+# ── Linux ─────────────────────────────────────────────────────────────────────
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+log/
+npm-debug.log*
+yarn-debug.log*
+
+
+# ── Uploads & Generated files ─────────────────────────────────────────────────
+# Local document storage (use S3/GCS in production)
+backend/uploads/
+backend/storage/
+uploads/
+storage/
+
+# Model cache (reranker downloads here)
+.cache/
+*.bin
+*.safetensors
+sentence_transformers/
+
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+dump.rdb
+*.rdb
+
+
+# ── Pinecone ──────────────────────────────────────────────────────────────────
+# BM25 fitted encoders if serialised locally
+*.bm25
+bm25_encoder.pkl
+
+
+# ── Test artifacts ────────────────────────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+coverage.xml
+*.cover
+test-results/
+junit.xml
+
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+.temp/
+tmp/
+temp/
+requirements_actual.txt

@@ -1,0 +1,615 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   index.css
+   Dark document-intelligence terminal aesthetic.
+   Fonts: IBM Plex Mono (mono/code) + Fraunces (display serif)
+   ───────────────────────────────────────────────────────────────────────── */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&display=swap");
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+img, svg { display: block; }
+button { cursor: pointer; border: none; background: none; font: inherit; }
+input, textarea { font: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --bg-base:       #09090B;   /* near-black */
+  --bg-surface:    #111113;   /* card / panel */
+  --bg-elevated:   #1A1A1E;   /* hover, selected */
+  --bg-border:     #242428;   /* subtle dividers */
+  --bg-input:      #161618;   /* input fields */
+
+  /* Accent — acid lime */
+  --accent:        #C8F135;
+  --accent-dim:    #9DBF1A;
+  --accent-glow:   rgba(200, 241, 53, 0.12);
+  --accent-muted:  rgba(200, 241, 53, 0.06);
+
+  /* Text */
+  --text-primary:   #F0EFEB;
+  --text-secondary: #8A8A8E;
+  --text-tertiary:  #4A4A50;
+  --text-accent:    #C8F135;
+  --text-error:     #FF6B6B;
+  --text-success:   #5CDB95;
+  --text-warning:   #FFB347;
+
+  /* Typography */
+  --font-mono:    "IBM Plex Mono", "Fira Code", monospace;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body:    "IBM Plex Mono", monospace; /* monospace everywhere — terminal feel */
+
+  /* Spacing */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Sidebar */
+  --sidebar-w: 260px;
+
+  /* Citations panel */
+  --citations-w: 320px;
+
+  /* Topbar */
+  --topbar-h: 48px;
+
+  /* Transitions */
+  --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Scrollbar */
+  --scrollbar-track: var(--bg-base);
+  --scrollbar-thumb: var(--bg-border);
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+body {
+  background: var(--bg-base);
+  color:       var(--text-primary);
+  font-family: var(--font-body);
+  font-size:   13px;
+  line-height: 1.6;
+  overflow:    hidden;
+  height:      100vh;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Scrollbars ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 4px; height: 4px; }
+::-webkit-scrollbar-track  { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb  { background: var(--scrollbar-thumb); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+/* ── Typography helpers ────────────────────────────────────────────────── */
+.display-heading {
+  font-family: var(--font-display);
+  font-style:  italic;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+}
+
+.mono-label {
+  font-family:    var(--font-mono);
+  font-size:      11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color:          var(--text-tertiary);
+}
+
+.code-text {
+  font-family: var(--font-mono);
+  font-size:   12px;
+  color:       var(--text-secondary);
+}
+
+/* ── Layout shell ──────────────────────────────────────────────────────── */
+.app-shell {
+  display:        flex;
+  flex-direction: column;
+  height:         100vh;
+  overflow:       hidden;
+}
+
+.app-body {
+  display:  flex;
+  flex:     1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────────── */
+.sidebar {
+  width:            var(--sidebar-w);
+  min-width:        var(--sidebar-w);
+  background:       var(--bg-surface);
+  border-right:     1px solid var(--bg-border);
+  display:          flex;
+  flex-direction:   column;
+  height:           100%;
+  overflow:         hidden;
+  transition:       width var(--transition-slow),
+                    min-width var(--transition-slow),
+                    opacity var(--transition-slow);
+}
+
+.sidebar.collapsed {
+  width:     0;
+  min-width: 0;
+  opacity:   0;
+  pointer-events: none;
+}
+
+.sidebar__header {
+  padding:        var(--space-4) var(--space-4) var(--space-3);
+  border-bottom:  1px solid var(--bg-border);
+  display:        flex;
+  align-items:    center;
+  justify-content: space-between;
+  flex-shrink:    0;
+}
+
+.sidebar__logo {
+  font-family:    var(--font-display);
+  font-style:     italic;
+  font-weight:    300;
+  font-size:      18px;
+  color:          var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.sidebar__logo span {
+  color: var(--accent);
+}
+
+.sidebar__section {
+  padding:     var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bg-border);
+  flex-shrink: 0;
+}
+
+.sidebar__section-label {
+  font-size:      10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color:          var(--text-tertiary);
+  margin-bottom:  var(--space-2);
+}
+
+.sidebar__content {
+  flex:       1;
+  overflow-y: auto;
+  padding:    var(--space-2) 0;
+}
+
+.sidebar__footer {
+  padding:       var(--space-3) var(--space-4);
+  border-top:    1px solid var(--bg-border);
+  flex-shrink:   0;
+}
+
+/* Namespace pill */
+.namespace-pill {
+  display:        inline-flex;
+  align-items:    center;
+  gap:            var(--space-1);
+  padding:        2px 8px;
+  background:     var(--accent-muted);
+  border:         1px solid var(--bg-border);
+  border-radius:  var(--radius-sm);
+  font-size:      11px;
+  color:          var(--text-accent);
+  font-family:    var(--font-mono);
+}
+
+/* Document list item */
+.doc-item {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+  padding:        var(--space-2) var(--space-4);
+  border-radius:  0;
+  transition:     background var(--transition);
+  cursor:         default;
+  overflow:       hidden;
+}
+
+.doc-item:hover {
+  background: var(--bg-elevated);
+}
+
+.doc-item__icon {
+  width:      28px;
+  height:     28px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border:     1px solid var(--bg-border);
+  display:    flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color:      var(--text-tertiary);
+}
+
+.doc-item__name {
+  flex:          1;
+  overflow:      hidden;
+  white-space:   nowrap;
+  text-overflow: ellipsis;
+  font-size:     12px;
+  color:         var(--text-primary);
+}
+
+.doc-item__meta {
+  font-size:  11px;
+  color:      var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.doc-item__delete {
+  opacity:    0;
+  color:      var(--text-tertiary);
+  transition: opacity var(--transition), color var(--transition);
+  flex-shrink: 0;
+  padding:    2px;
+  border-radius: var(--radius-sm);
+}
+
+.doc-item:hover .doc-item__delete {
+  opacity: 1;
+}
+
+.doc-item__delete:hover {
+  color:      var(--text-error);
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* ── Topbar ────────────────────────────────────────────────────────────── */
+.topbar {
+  height:           var(--topbar-h);
+  min-height:       var(--topbar-h);
+  background:       var(--bg-surface);
+  border-bottom:    1px solid var(--bg-border);
+  display:          flex;
+  align-items:      center;
+  padding:          0 var(--space-4);
+  gap:              var(--space-4);
+  flex-shrink:      0;
+  position:         relative;
+  z-index:          10;
+}
+
+.topbar__left {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+  flex:        1;
+}
+
+.topbar__right {
+  display:     flex;
+  align-items: center;
+  gap:         var(--space-3);
+}
+
+.topbar__divider {
+  width:  1px;
+  height: 20px;
+  background: var(--bg-border);
+}
+
+.topbar__title {
+  font-family: var(--font-display);
+  font-style:  italic;
+  font-weight: 300;
+  font-size:   16px;
+  color:       var(--text-primary);
+}
+
+/* Status indicator */
+.status-dot {
+  width:        7px;
+  height:       7px;
+  border-radius: 50%;
+  flex-shrink:  0;
+}
+
+.status-dot--ok      { background: var(--text-success); box-shadow: 0 0 6px var(--text-success); }
+.status-dot--error   { background: var(--text-error); }
+.status-dot--loading { background: var(--text-warning); animation: pulse 1.2s infinite; }
+.status-dot--unknown { background: var(--text-tertiary); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+/* Model badge */
+.model-badge {
+  display:        inline-flex;
+  align-items:    center;
+  gap:            5px;
+  padding:        3px 8px;
+  background:     var(--bg-elevated);
+  border:         1px solid var(--bg-border);
+  border-radius:  var(--radius-sm);
+  font-size:      11px;
+  color:          var(--text-secondary);
+  font-family:    var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Icon button */
+.icon-btn {
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+  width:          32px;
+  height:         32px;
+  border-radius:  var(--radius-md);
+  color:          var(--text-tertiary);
+  transition:     color var(--transition), background var(--transition);
+  flex-shrink:    0;
+}
+
+.icon-btn:hover {
+  color:       var(--text-primary);
+  background:  var(--bg-elevated);
+}
+
+.icon-btn.active {
+  color:      var(--text-accent);
+  background: var(--accent-muted);
+}
+
+/* ── Main content area ─────────────────────────────────────────────────── */
+.main-content {
+  flex:           1;
+  display:        flex;
+  flex-direction: column;
+  overflow:       hidden;
+  position:       relative;
+}
+
+/* ── Citations panel ───────────────────────────────────────────────────── */
+.citations-panel {
+  width:        var(--citations-w);
+  min-width:    var(--citations-w);
+  background:   var(--bg-surface);
+  border-left:  1px solid var(--bg-border);
+  display:      flex;
+  flex-direction: column;
+  height:       100%;
+  overflow:     hidden;
+  transition:   width var(--transition-slow),
+                min-width var(--transition-slow),
+                opacity var(--transition-slow);
+}
+
+.citations-panel.collapsed {
+  width:     0;
+  min-width: 0;
+  opacity:   0;
+  pointer-events: none;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.btn {
+  display:        inline-flex;
+  align-items:    center;
+  justify-content: center;
+  gap:            var(--space-2);
+  padding:        6px 14px;
+  border-radius:  var(--radius-md);
+  font-family:    var(--font-mono);
+  font-size:      12px;
+  font-weight:    500;
+  letter-spacing: 0.02em;
+  transition:     background var(--transition),
+                  color var(--transition),
+                  border-color var(--transition),
+                  box-shadow var(--transition);
+  white-space:    nowrap;
+}
+
+.btn-primary {
+  background:  var(--accent);
+  color:       #09090B;
+  border:      1px solid transparent;
+}
+
+.btn-primary:hover {
+  background:  var(--accent-dim);
+  box-shadow:  0 0 16px var(--accent-glow);
+}
+
+.btn-primary:active { transform: translateY(1px); }
+
+.btn-ghost {
+  background:  transparent;
+  color:       var(--text-secondary);
+  border:      1px solid var(--bg-border);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-elevated);
+  color:      var(--text-primary);
+}
+
+.btn-danger {
+  background:  transparent;
+  color:       var(--text-error);
+  border:      1px solid rgba(255, 107, 107, 0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+/* ── Inputs ────────────────────────────────────────────────────────────── */
+.input {
+  background:    var(--bg-input);
+  border:        1px solid var(--bg-border);
+  border-radius: var(--radius-md);
+  color:         var(--text-primary);
+  font-family:   var(--font-mono);
+  font-size:     12px;
+  padding:       6px 10px;
+  outline:       none;
+  transition:    border-color var(--transition), box-shadow var(--transition);
+  width:         100%;
+}
+
+.input:focus {
+  border-color: var(--accent-dim);
+  box-shadow:   0 0 0 2px var(--accent-glow);
+}
+
+.input::placeholder { color: var(--text-tertiary); }
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast-container {
+  position:       fixed;
+  bottom:         var(--space-6);
+  right:          var(--space-6);
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2);
+  z-index:        1000;
+  pointer-events: none;
+}
+
+.toast {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2);
+  padding:        10px 14px;
+  background:     var(--bg-elevated);
+  border:         1px solid var(--bg-border);
+  border-radius:  var(--radius-md);
+  font-size:      12px;
+  font-family:    var(--font-mono);
+  pointer-events: auto;
+  animation:      toast-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  max-width:      340px;
+  box-shadow:     0 4px 20px rgba(0,0,0,0.4);
+}
+
+.toast--success { border-left: 3px solid var(--text-success); }
+.toast--error   { border-left: 3px solid var(--text-error); }
+.toast--info    { border-left: 3px solid var(--accent); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Citation tag inline ───────────────────────────────────────────────── */
+cite.citation-tag {
+  display:        inline-flex;
+  align-items:    center;
+  justify-content: center;
+  min-width:      18px;
+  height:         16px;
+  padding:        0 4px;
+  background:     var(--accent-muted);
+  border:         1px solid rgba(200, 241, 53, 0.25);
+  border-radius:  3px;
+  font-size:      10px;
+  font-family:    var(--font-mono);
+  color:          var(--text-accent);
+  font-style:     normal;
+  vertical-align: middle;
+  cursor:         pointer;
+  transition:     background var(--transition), border-color var(--transition);
+  user-select:    none;
+  margin:         0 1px;
+}
+
+cite.citation-tag:hover {
+  background:   rgba(200, 241, 53, 0.15);
+  border-color: var(--accent);
+}
+
+/* ── Skeleton loader ───────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-border)   50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 400% 100%;
+  border-radius:   var(--radius-sm);
+  animation:       shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+
+/* ── Noise texture overlay ─────────────────────────────────────────────── */
+.app-shell::before {
+  content:  "";
+  position: fixed;
+  inset:    0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 180px;
+  opacity:  0.018;
+  pointer-events: none;
+  z-index:  9999;
+}
+
+/* ── Utility classes ───────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); border: 0;
+}
+
+.truncate {
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+.flex-center {
+  display: flex; align-items: center; justify-content: center;
+}
+
+.gap-1 { gap: var(--space-1); }
+.gap-2 { gap: var(--space-2); }
+.gap-3 { gap: var(--space-3); }
+.gap-4 { gap: var(--space-4); }
+
+.text-accent    { color: var(--text-accent); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary  { color: var(--text-tertiary); }
+.text-error     { color: var(--text-error); }
+.text-success   { color: var(--text-success); }
+
+/* ── Responsive — collapse sidebar on small screens ───────────────────── */
+@media (max-width: 768px) {
+  :root { --sidebar-w: 100vw; --citations-w: 100vw; }
+  .sidebar { position: absolute; z-index: 100; }
+  .citations-panel { position: absolute; right: 0; z-index: 100; }
+}
