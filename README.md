@@ -1,4 +1,4 @@
-# 🔍 RAG Intelligence — Production RAG Application
+# 🧠 DeepContext Engine
 
 <div align="center">
 
@@ -19,23 +19,36 @@
 
 ## 📋 Table of Contents
 
-- [Overview](#-overview)
-- [Features](#-features)
-- [Architecture](#-architecture)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Quick Start](#-quick-start)
-- [Configuration](#-configuration)
-- [API Reference](#-api-reference)
-- [Two-Stage Retrieval Pipeline](#-two-stage-retrieval-pipeline)
-- [Deployment](#-deployment)
-- [Contributing](#-contributing)
+- [Why I Built This](#why-i-built-this)
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+- [Two-Stage Retrieval Pipeline](#two-stage-retrieval-pipeline)
+- [Performance](#performance)
+- [Deployment](#deployment)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+
+---
+
+## 🔥 Why I Built This
+
+Most RAG systems retrieve noisy or weak context — they embed a query, grab the top-k nearest vectors, and hand everything to the LLM hoping for the best. The result is answers padded with irrelevant chunks, hallucinated citations, and no clear grounding.
+
+DeepContext Engine explores how **multi-stage retrieval, cross-encoder reranking, and streaming architectures** can dramatically improve answer grounding and response quality in production AI systems.
+
+The core insight: combining a fast approximate search (Pinecone ANN) with a precise cross-encoder reranker creates a retrieval pipeline that is both fast and accurate — something neither approach achieves alone. This two-stage funnel is what delivers the **80% improvement in retrieval relevance**.
 
 ---
 
 ## 🎯 Overview
 
-RAG Intelligence is a full-stack document question-answering system that allows you to:
+DeepContext Engine is a full-stack document question-answering system that allows you to:
 
 - **Upload documents** (PDF, DOCX, TXT, MD, HTML) and ingest them into a vector database
 - **Ask questions** in natural language and receive grounded, cited answers
@@ -52,7 +65,7 @@ Every answer includes inline `[SOURCE N]` citations linking back to the exact do
 ### Backend
 - ⚡ **FastAPI** with async/await throughout — non-blocking I/O
 - 🔍 **Two-stage retrieval** — Pinecone ANN + cross-encoder reranking (80% accuracy improvement)
-- 🧠 **Gemini 1.5 Pro** for generation, **Gemini Embedding** for vectorisation
+- 🧠 **Gemini 1.5 Pro** for generation, **Gemini Embedding 001** for vectorisation
 - 🗄️ **Pinecone v4** vector store with hybrid dense + sparse (BM25) search
 - 🔄 **LangChain** orchestration with citation-enforcing prompt templates
 - 💾 **Redis** caching for embeddings and query results
@@ -101,7 +114,7 @@ Every answer includes inline `[SOURCE N]` citations linking back to the exact do
 User Query
     │
     ▼
-Embed Query (Gemini Embedding)
+Embed Query (Gemini Embedding 001)
     │
     ▼
 Stage 1: Pinecone ANN Search ──── top-20 candidates (fast, ~20ms)
@@ -110,10 +123,10 @@ Stage 1: Pinecone ANN Search ──── top-20 candidates (fast, ~20ms)
 Stage 2: Cross-Encoder Reranking ─ top-5 precision-ranked (accurate, ~150ms)
     │
     ▼
-Format Context + Prompt
+Format Context + Citation-Enforcing Prompt
     │
     ▼
-Gemini 1.5 Pro (with citation rules)
+Gemini 1.5 Pro
     │
     ▼
 Grounded Answer with [SOURCE N] citations
@@ -142,7 +155,7 @@ Grounded Answer with [SOURCE N] citations
 ## 📁 Project Structure
 
 ```
-rag-application/
+deepcontext-engine/
 │
 ├── backend/
 │   ├── app/
@@ -169,7 +182,7 @@ rag-application/
 │   │   │   └── llm_service.py        # Gemini / Ollama abstraction
 │   │   ├── vectorstore/
 │   │   │   ├── pinecone_client.py    # Pinecone operations
-│   │   │   └── embeddings.py         # Embedding model wrapper + cache
+│   │   │   └── embeddings.py         # Embedding model wrapper + Redis cache
 │   │   └── main.py                   # FastAPI app factory + lifespan
 │   ├── tests/
 │   │   ├── unit/
@@ -214,8 +227,8 @@ rag-application/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/rag-application.git
-cd rag-application
+git clone https://github.com/your-username/deepcontext-engine.git
+cd deepcontext-engine
 ```
 
 ### 2. Set up the backend
@@ -233,13 +246,13 @@ pip install -r requirements.txt
 
 # Configure environment
 cp .env.example .env
-# Edit .env and fill in your API keys (see Configuration section)
+# Edit .env and fill in your API keys
 ```
 
 ### 3. Start Redis
 
 ```bash
-docker run -d -p 6379:6379 --name rag-redis redis:7-alpine
+docker run -d -p 6379:6379 --name deepcontext-redis redis:7-alpine
 ```
 
 ### 4. Start the backend
@@ -259,14 +272,10 @@ INFO: rag_api_ready                   host=0.0.0.0 port=8000
 ### 5. Set up the frontend
 
 ```bash
-# New terminal tab
 cd frontend
-
 npm install
-
 cp .env.example .env
-# Set VITE_API_KEY to the same value as API_KEYS in backend/.env
-
+# Set VITE_API_KEY to match API_KEYS in backend/.env
 npm run dev
 ```
 
@@ -279,33 +288,25 @@ Open **http://localhost:5173** 🎉
 ### Backend `.env`
 
 ```dotenv
-# ── App ──────────────────────────────────────────────────
 ENVIRONMENT=development
-SECRET_KEY=your-secret-key-here          # generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
+SECRET_KEY=your-secret-key-here
 
-# ── CORS ─────────────────────────────────────────────────
 ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:5173"]
+API_KEYS=["your-generated-api-key"]
 
-# ── API Security ─────────────────────────────────────────
-API_KEYS=["your-generated-api-key"]      # generate: python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-# ── Pinecone ─────────────────────────────────────────────
-PINECONE_API_KEY=your-pinecone-api-key   # from app.pinecone.io
+PINECONE_API_KEY=your-pinecone-api-key
 PINECONE_ENVIRONMENT=us-east-1-aws
 PINECONE_INDEX_NAME=rag-index
-PINECONE_DIMENSION=3072                  # must match embedding model output
+PINECONE_DIMENSION=3072
 
-# ── Gemini ───────────────────────────────────────────────
-GEMINI_API_KEY=your-gemini-api-key       # from aistudio.google.com
+GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-1.5-pro
 EMBEDDING_MODEL=gemini-embedding-001
 
-# ── Retrieval ─────────────────────────────────────────────
-RETRIEVAL_TOP_K=20                       # Pinecone candidates before reranking
-RERANKER_TOP_N=5                         # Final chunks passed to LLM
+RETRIEVAL_TOP_K=20
+RERANKER_TOP_N=5
 SIMILARITY_SCORE_THRESHOLD=0.70
 
-# ── Redis ─────────────────────────────────────────────────
 REDIS_URL=redis://localhost:6379/0
 ```
 
@@ -313,7 +314,7 @@ REDIS_URL=redis://localhost:6379/0
 
 ```dotenv
 VITE_API_BASE_URL=http://localhost:8000/api/v1
-VITE_API_KEY=your-generated-api-key      # same as API_KEYS in backend/.env
+VITE_API_KEY=your-generated-api-key
 ```
 
 > ⚠️ **Never commit `.env` files.** They are listed in `.gitignore`.
@@ -322,162 +323,58 @@ VITE_API_KEY=your-generated-api-key      # same as API_KEYS in backend/.env
 
 ## 📡 API Reference
 
-Interactive docs available at **http://localhost:8000/docs** (development only).
+Interactive docs at **http://localhost:8000/docs** (development only).
 
 ### Authentication
-
-All endpoints require the `X-API-Key` header:
 ```
 X-API-Key: your-api-key
 ```
 
-### Query Endpoints
+### Key Endpoints
 
-#### `POST /api/v1/query` — Single-turn RAG
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/query` | Single-turn RAG (blocking or SSE stream) |
+| `POST` | `/api/v1/query/chat` | Multi-turn conversational RAG |
+| `POST` | `/api/v1/documents/upload` | Upload a file |
+| `POST` | `/api/v1/documents/text` | Ingest raw text |
+| `DELETE` | `/api/v1/documents/{id}` | Delete document chunks |
+| `GET` | `/api/v1/documents/stats` | Index statistics |
+| `GET` | `/health` | Health check |
+
+#### Example query request
 
 ```json
 {
   "question": "What are the payment terms in the contract?",
-  "namespace": "default",
   "top_k": 20,
   "top_n": 5,
   "stream": false
 }
 ```
 
-**Response:**
+#### Example response
+
 ```json
 {
   "answer": "Payment terms require invoices within 30 days [SOURCE 1].",
-  "sources": [
-    {
-      "index": 1,
-      "source": "contract-2024.pdf",
-      "score": 0.9821,
-      "text_preview": "Invoices must be submitted within 30 calendar days...",
-      "vector_id": "doc-abc-0"
-    }
-  ],
+  "sources": [{"index": 1, "source": "contract.pdf", "score": 0.98}],
   "latency_ms": 312,
   "reranked": true,
   "model": "gemini-1.5-pro"
 }
 ```
 
-Set `"stream": true` to receive a **Server-Sent Events** stream.
-
-#### `POST /api/v1/query/chat` — Multi-turn conversational RAG
-
-```json
-{
-  "question": "Which of those apply to subcontractors?",
-  "history": [
-    {"role": "user",      "content": "What are the key NDA clauses?"},
-    {"role": "assistant", "content": "The NDA covers confidentiality..."}
-  ]
-}
-```
-
-### Document Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/documents/upload` | Upload a file (PDF, DOCX, TXT, MD, HTML) |
-| `POST` | `/api/v1/documents/text` | Ingest raw text |
-| `DELETE` | `/api/v1/documents/{id}` | Delete all chunks for a document |
-| `GET` | `/api/v1/documents/stats` | Pinecone index statistics |
-| `GET` | `/health` | Service health check |
-
 ---
 
 ## 🔬 Two-Stage Retrieval Pipeline
 
-The 80% retrieval improvement comes from combining two complementary techniques:
+| Stage | Method | Candidates | Latency | Accuracy |
+|---|---|---|---|---|
+| Stage 1 | Pinecone ANN (bi-encoder) | top-20 | ~20ms | Good |
+| Stage 2 | Cross-encoder reranking | top-5 | ~150ms | Excellent ✅ |
 
-### Stage 1 — Pinecone ANN (fast, broad)
-- Query embedding via Gemini Embedding 001
-- Approximate Nearest Neighbour search returns **top-20 candidates**
-- Latency: ~20–50ms
-
-### Stage 2 — Cross-Encoder Reranking (slow, precise)
-- Model: `cross-encoder/ms-marco-MiniLM-L-6-v2`
-- Sees query **and** chunk together (unlike bi-encoders)
-- Re-scores all 20 candidates and selects **top-5**
-- Latency: ~100–200ms on CPU
-
-### Why this works
-
-| Method | How it scores | Speed | Accuracy |
-|---|---|---|---|
-| Bi-encoder (Pinecone) | Query and chunk separately | Fast ✅ | Good |
-| Cross-encoder (Reranker) | Query + chunk together | Slow ⚠️ | Excellent ✅ |
-
-The two-stage funnel gives you the **speed** of ANN search with the **accuracy** of cross-encoder scoring.
-
----
-
-## 🐳 Deployment
-
-### Docker Compose (recommended)
-
-```bash
-# Copy and fill in environment files
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-
-# Build and start everything
-docker compose up --build
-
-# Open http://localhost
-```
-
-This starts:
-- **FastAPI backend** on port 8000
-- **React frontend** on port 5173
-- **Redis** on port 6379
-- **Nginx** reverse proxy on port 80
-
-### Manual deployment
-
-For VPS/cloud deployment:
-
-```bash
-# Backend — production mode
-ENVIRONMENT=production uvicorn app.main:app \
-  --host 0.0.0.0 --port 8000 --workers 4
-
-# Frontend — build static files
-cd frontend && npm run build
-# Serve dist/ with Nginx or any static host
-```
-
-### Environment-specific settings
-
-| Setting | Development | Production |
-|---|---|---|
-| `ENVIRONMENT` | `development` | `production` |
-| `DEBUG` | `False` | `False` |
-| `LOG_JSON` | `False` | `True` |
-| `WORKERS` | `1` | `4+` |
-| `API_KEYS` | optional | **required** |
-| Swagger UI | ✅ enabled | ❌ disabled |
-
----
-
-## 🧪 Running Tests
-
-```bash
-cd backend
-
-# Unit tests (no credentials needed)
-pytest tests/unit/ -v
-
-# Integration tests (requires live credentials)
-INTEGRATION_TESTS=1 pytest tests/integration/ -v
-
-# With coverage
-pytest tests/unit/ --cov=app --cov-report=html
-```
+The bi-encoder embeds query and chunk **independently** — fast but imprecise. The cross-encoder sees them **together**, allowing attention to model their interaction — slower but dramatically more accurate. Combining both gives you speed and precision.
 
 ---
 
@@ -489,9 +386,53 @@ pytest tests/unit/ --cov=app --cov-report=html
 | Pinecone ANN query | ~20–50ms |
 | Cross-encoder reranking (CPU) | ~100–200ms |
 | Gemini 1.5 Pro generation | ~1–3s |
-| **Total end-to-end (cached embed)** | **~1.5–4s** |
+| **Total end-to-end** | **~1.5–4s** |
 
-Retrieval accuracy improvement over naive top-k: **~80%** (measured on domain-specific Q&A benchmarks).
+---
+
+## 🐳 Deployment
+
+### Docker Compose (recommended)
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+docker compose up --build
+# Open http://localhost
+```
+
+### Production settings
+
+| Setting | Development | Production |
+|---|---|---|
+| `ENVIRONMENT` | `development` | `production` |
+| `LOG_JSON` | `False` | `True` |
+| `WORKERS` | `1` | `4+` |
+| `API_KEYS` | optional | **required** |
+| Swagger UI | ✅ | ❌ |
+
+---
+
+## 🧪 Running Tests
+
+```bash
+cd backend
+pytest tests/unit/ -v
+INTEGRATION_TESTS=1 pytest tests/integration/ -v
+```
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **Hybrid retrieval optimisation** — dynamic α-weighting based on query type
+- [ ] **Adaptive chunking** — semantic chunking instead of fixed character splits
+- [ ] **Query rewriting** — HyDE (Hypothetical Document Embeddings) for better recall
+- [ ] **Multi-agent workflows** — decompose complex questions into sub-queries
+- [ ] **Knowledge graph integration** — entity-aware retrieval with Neo4j
+- [ ] **Evaluation framework** — RAGAS metrics (faithfulness, relevancy, context recall)
+- [ ] **User authentication** — JWT-based multi-user support with per-user namespaces
+- [ ] **Ollama integration** — fully local deployment with no external API calls
 
 ---
 
@@ -514,5 +455,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 <div align="center">
 
 Built with ❤️ using FastAPI, React, Pinecone, and Gemini
+
+**DeepContext Engine** — because context is everything.
 
 </div>
