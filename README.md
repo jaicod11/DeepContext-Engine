@@ -19,20 +19,20 @@
 
 ## 📋 Table of Contents
 
-- [Why I Built This](#why-i-built-this)
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [API Reference](#api-reference)
-- [Two-Stage Retrieval Pipeline](#two-stage-retrieval-pipeline)
-- [Performance](#performance)
-- [Deployment](#deployment)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
+- [Why I Built This](#-why-i-built-this)
+- [Overview](#-overview)
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Quick Start](#-quick-start)
+- [Configuration](#-configuration)
+- [API Reference](#-api-reference)
+- [Two-Stage Retrieval Pipeline](#-two-stage-retrieval-pipeline)
+- [Performance](#-performance)
+- [Deployment](#-deployment)
+- [Roadmap](#-roadmap)
+- [Contributing](#-contributing)
 
 ---
 
