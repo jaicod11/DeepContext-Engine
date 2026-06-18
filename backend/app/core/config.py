@@ -295,8 +295,8 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        """Convert AnyHttpUrl objects to plain strings for FastAPI."""
-        return [str(o) for o in self.allowed_origins]
+        """Convert AnyHttpUrl objects to plain strings, stripping trailing slash."""
+        return [str(o).rstrip("/") for o in self.allowed_origins]
 
     def redacted_dict(self) -> dict[str, Any]:
         """

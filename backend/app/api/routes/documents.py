@@ -59,7 +59,7 @@ async def ingest_text(
                           chunks_total=r.chunks_total, vectors_upserted=r.vectors_upserted,
                           namespace=r.namespace)
 
-@router.delete("/{document_id}", status_code=204)
+@router.delete("/{document_id}", status_code=204, response_model=None)
 async def delete_document(
     document_id: str,
     namespace:   str | None = None,

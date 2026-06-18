@@ -1,31 +1,14 @@
-/**
- * services/api.js
- * ---------------
- * Centralised Axios client for the RAG backend.
- *
- * All endpoints, request/response shapes, and error normalisation live here.
- * No component should ever call fetch() or axios directly — always use this module.
- *
- * Environment variables (set in .env):
- *   VITE_API_BASE_URL   — e.g. http://localhost:8000/api/v1
- *   VITE_API_KEY        — X-API-Key header value
- */
-
 import axios from "axios";
 
-// ─────────────────────────────────────────────
-// Client factory
-// ─────────────────────────────────────────────
-
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
-const API_KEY  = import.meta.env.VITE_API_KEY  ?? "";
+const API_KEY = import.meta.env.VITE_API_KEY ?? "";
 
 const client = axios.create({
   baseURL: BASE_URL,
   timeout: 60_000,          // 60s — LLM calls can be slow
   headers: {
-    "Content-Type":  "application/json",
-    "X-API-Key":     API_KEY,
+    "Content-Type": "application/json",
+    "X-API-Key": API_KEY,
   },
 });
 
@@ -39,18 +22,18 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    const status  = error.response?.status;
-    const detail  = error.response?.data?.detail ?? error.message ?? "Unknown error";
-    const reqId   = error.response?.headers?.["x-request-id"] ?? null;
+    const status = error.response?.status;
+    const detail = error.response?.data?.detail ?? error.message ?? "Unknown error";
+    const reqId = error.response?.headers?.["x-request-id"] ?? null;
 
     const normalised = {
       status,
       message: detail,
       requestId: reqId,
       isNetworkError: !error.response,
-      isAuthError:    status === 401 || status === 403,
-      isRateLimit:    status === 429,
-      retryAfter:     error.response?.headers?.["retry-after"] ?? null,
+      isAuthError: status === 401 || status === 403,
+      isRateLimit: status === 429,
+      retryAfter: error.response?.headers?.["retry-after"] ?? null,
     };
 
     return Promise.reject(normalised);
@@ -67,7 +50,8 @@ client.interceptors.response.use(
  * @returns {{ status: string, version: string, pinecone: object }}
  */
 export const fetchHealth = async () => {
-  const { data } = await client.get("/health");
+  const baseRoot = BASE_URL.replace(/\/api\/v1$/, "");
+  const { data } = await axios.get(`${baseRoot}/health`);
   return data;
 };
 
@@ -98,18 +82,18 @@ export const fetchHealth = async () => {
  */
 export const queryRAG = async ({
   question,
-  namespace        = null,
-  metadataFilter   = null,
-  topK             = null,
-  topN             = null,
+  namespace = null,
+  metadataFilter = null,
+  topK = null,
+  topN = null,
 }) => {
   const { data } = await client.post("/query", {
     question,
     namespace,
     metadata_filter: metadataFilter,
-    top_k:           topK,
-    top_n:           topN,
-    stream:          false,
+    top_k: topK,
+    top_n: topN,
+    stream: false,
   });
   return data;
 };
@@ -137,29 +121,29 @@ export const queryRAG = async ({
  */
 export async function* streamQuery({
   question,
-  namespace      = null,
+  namespace = null,
   metadataFilter = null,
-  topK           = null,
-  topN           = null,
-  signal         = null,   // AbortController signal for cancellation
+  topK = null,
+  topN = null,
+  signal = null,   // AbortController signal for cancellation
 }) {
   const url = `${BASE_URL}/query`;
   const body = JSON.stringify({
     question,
     namespace,
     metadata_filter: metadataFilter,
-    top_k:           topK,
-    top_n:           topN,
-    stream:          true,
+    top_k: topK,
+    top_n: topN,
+    stream: true,
   });
 
   let response;
   try {
     response = await fetch(url, {
-      method:  "POST",
+      method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key":    API_KEY,
+        "X-API-Key": API_KEY,
         "X-Request-ID": crypto.randomUUID(),
       },
       body,
@@ -172,14 +156,14 @@ export async function* streamQuery({
 
   if (!response.ok) {
     let detail = "Stream request failed";
-    try { detail = (await response.json()).detail ?? detail; } catch (_) {}
+    try { detail = (await response.json()).detail ?? detail; } catch (_) { }
     yield { type: "error", data: detail };
     return;
   }
 
-  const reader  = response.body.getReader();
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let   buffer  = "";
+  let buffer = "";
 
   while (true) {
     const { done, value } = await reader.read();
@@ -202,7 +186,7 @@ export async function* streamQuery({
         try {
           const sources = JSON.parse(payload.slice(10));
           yield { type: "sources", data: sources };
-        } catch (_) {}
+        } catch (_) { }
         continue;
       }
 
