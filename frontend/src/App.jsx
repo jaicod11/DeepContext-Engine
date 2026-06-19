@@ -1,37 +1,19 @@
-/**
- * App.jsx
- * --------
- * Root layout component.
- *
- * Structure:
- *   <TopBar />
- *   <Sidebar />  |  <main: ChatInterface />  |  <CitationsPanel />
- *   <ToastContainer />
- *   <DocumentUpload modal />
- */
-
-import { useState, lazy, Suspense } from "react";
-import TopBar    from "@/components/layout/TopBar";
-import Sidebar   from "@/components/layout/Sidebar";
-import Toast     from "@/components/shared/Toast";
+import { lazy, Suspense } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { useAppStore } from "@/stores/appStore";
+import IconSidebar from "@/components/layout/IconSidebar";
+import Toast from "@/components/shared/Toast";
 
-/* Lazy-load heavier panels to keep initial bundle small */
-const ChatInterface   = lazy(() => import("@/components/chat/ChatInterface"));
-const CitationsPanel  = lazy(() => import("@/components/shared/SourceCitations"));
-const DocumentUpload  = lazy(() => import("@/components/documents/DocumentUpload"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const DocumentChatPage = lazy(() => import("@/pages/DocumentChatPage"));
+const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
+const ChatHistoryPage = lazy(() => import("@/pages/ChatHistoryPage"));
 
-/* Fallback for lazy panels */
-function PanelFallback() {
+function PageLoader() {
   return (
     <div style={{
-      flex:           1,
-      display:        "flex",
-      alignItems:     "center",
-      justifyContent: "center",
-      color:          "var(--text-tertiary)",
-      fontSize:       12,
-      fontFamily:     "var(--font-mono)",
+      flex: 1, display: "flex", alignItems: "center",
+      justifyContent: "center", color: "var(--text-muted)", fontSize: 13,
     }}>
       Loading…
     </div>
@@ -39,39 +21,29 @@ function PanelFallback() {
 }
 
 export default function App() {
-  const citationPanelOpen = useAppStore((s) => s.citationPanelOpen);
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const toasts = useAppStore((s) => s.toasts);
+  const dismissToast = useAppStore((s) => s.dismissToast);
 
   return (
     <div className="app-shell">
-      <TopBar />
+      <IconSidebar />
 
-      <div className="app-body">
-        {/* Left — document sidebar */}
-        <Sidebar onUploadClick={() => setUploadOpen(true)} />
-
-        {/* Centre — chat */}
-        <main className="main-content" role="main">
-          <Suspense fallback={<PanelFallback />}>
-            <ChatInterface onUploadClick={() => setUploadOpen(true)} />
-          </Suspense>
-        </main>
-
-        {/* Right — citations panel */}
-        <Suspense fallback={null}>
-          <CitationsPanel />
+      <div className="page-content" style={{ position: "relative" }}>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/history" element={<ChatHistoryPage />} />
+            <Route path="/chat" element={<DocumentChatPage />} />
+            <Route path="/chat/:documentId" element={<DocumentChatPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </Suspense>
       </div>
 
-      {/* Global notifications */}
-      <Toast />
-
-      {/* Upload modal */}
-      {uploadOpen && (
-        <Suspense fallback={null}>
-          <DocumentUpload onClose={() => setUploadOpen(false)} />
-        </Suspense>
-      )}
+      {toasts?.slice(-1).map((t) => (
+        <Toast key={t.id} toast={t} onClose={() => dismissToast(t.id)} />
+      ))}
     </div>
   );
 }

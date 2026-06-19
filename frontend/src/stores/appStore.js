@@ -1,20 +1,3 @@
-/**
- * stores/appStore.js
- * -------------------
- * Zustand global state for the entire RAG application.
- *
- * Slices:
- *   • chat       — messages, streaming state, conversation history
- *   • documents  — ingested document records + upload queue
- *   • settings   — namespace, topK/topN overrides, stream toggle
- *   • ui         — sidebar open, citations panel, toasts, health
- *
- * Usage:
- *   import { useAppStore } from "@/stores/appStore";
- *   const messages   = useAppStore((s) => s.messages);
- *   const sendQuery  = useAppStore((s) => s.sendQuery);
- */
-
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import { queryRAG, streamQuery, fetchHealth } from "@/services/api";
@@ -36,14 +19,14 @@ import { queryRAG, streamQuery, fetchHealth } from "@/services/api";
 const uid = () => crypto.randomUUID();
 
 const makeMessage = (role, content, extras = {}) => ({
-  id:      uid(),
+  id: uid(),
   role,
   content,
-  sources:    [],
+  sources: [],
   latency_ms: null,
-  model:      null,
+  model: null,
   isStreaming: false,
-  error:      null,
+  error: null,
   ...extras,
 });
 
@@ -60,9 +43,9 @@ export const useAppStore = create(
         // CHAT SLICE
         // ══════════════════════════════════════
 
-        messages:        [],
-        isQuerying:      false,
-        streamingId:     null,    // ID of the message currently being streamed
+        messages: [],
+        isQuerying: false,
+        streamingId: null,    // ID of the message currently being streamed
         abortController: null,    // AbortController for the active stream
 
         /** Append a user message + fire the RAG query */
@@ -83,9 +66,9 @@ export const useAppStore = create(
 
           const queryParams = {
             question,
-            namespace:      settings.namespace   || null,
-            topK:           settings.topK        || null,
-            topN:           settings.topN        || null,
+            namespace: settings.namespace || null,
+            topK: settings.topK || null,
+            topN: settings.topN || null,
             metadataFilter: settings.metadataFilter || null,
           };
 
@@ -102,18 +85,18 @@ export const useAppStore = create(
               // ── Blocking mode ──────────────────
               const result = await queryRAG(queryParams);
               _updateMessage(assistantMsg.id, {
-                content:     result.answer,
-                sources:     result.sources,
-                latency_ms:  result.latency_ms,
-                model:       result.model,
+                content: result.answer,
+                sources: result.sources,
+                latency_ms: result.latency_ms,
+                model: result.model,
                 isStreaming: false,
               });
             }
           } catch (err) {
             const message = err?.message ?? "Query failed. Check your connection.";
             _updateMessage(assistantMsg.id, {
-              content:     "",
-              error:       message,
+              content: "",
+              error: message,
               isStreaming: false,
             });
             _addToast({ message, type: "error" });
@@ -141,7 +124,7 @@ export const useAppStore = create(
               break;
             } else if (event.type === "error") {
               _updateMessage(messageId, {
-                error:       event.data,
+                error: event.data,
                 isStreaming: false,
               });
               break;
@@ -186,9 +169,9 @@ export const useAppStore = create(
         // DOCUMENTS SLICE
         // ══════════════════════════════════════
 
-        documents:    [],   // DocRecord[]
-        uploadQueue:  [],   // { file, status, progress, error, id }[]
-        indexStats:   null,
+        documents: [],   // DocRecord[]
+        uploadQueue: [],   // { file, status, progress, error, id }[]
+        indexStats: null,
 
         addDocument: (doc) =>
           set((s) => ({ documents: [doc, ...s.documents] })),
@@ -220,14 +203,29 @@ export const useAppStore = create(
 
 
         // ══════════════════════════════════════
+        // CHAT HISTORY SLICE
+        // ══════════════════════════════════════
+
+        chatSessions: {},   // { [documentId]: { documentId, filename, messages, updatedAt } }
+
+        saveChatSession: (documentId, filename, messages) =>
+          set((s) => ({
+            chatSessions: {
+              ...s.chatSessions,
+              [documentId]: { documentId, filename, messages, updatedAt: Date.now() },
+            },
+          })),
+
+
+        // ══════════════════════════════════════
         // SETTINGS SLICE  (persisted)
         // ══════════════════════════════════════
 
         settings: {
-          streamEnabled:  true,
-          namespace:      "",
-          topK:           null,
-          topN:           null,
+          streamEnabled: true,
+          namespace: "",
+          topK: null,
+          topN: null,
           metadataFilter: null,
         },
 
@@ -239,14 +237,17 @@ export const useAppStore = create(
         // UI SLICE
         // ══════════════════════════════════════
 
-        sidebarOpen:      true,
+        sidebarOpen: true,
+        showUploadModal: false,
+        openUploadModal: () => set({ showUploadModal: true }),
+        setShowUploadModal: (val) => set({ showUploadModal: val }),
         citationPanelOpen: false,
-        activeCitations:  [],      // sources for the currently selected message
-        toasts:           [],
-        health:           null,    // { status, version, pinecone }
-        healthLoading:    false,
+        activeCitations: [],      // sources for the currently selected message
+        toasts: [],
+        health: null,    // { status, version, pinecone }
+        healthLoading: false,
 
-        toggleSidebar:       () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+        toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
         toggleCitationPanel: () => set((s) => ({ citationPanelOpen: !s.citationPanelOpen })),
 
         showCitations: (sources) =>
@@ -282,9 +283,9 @@ export const useAppStore = create(
       }),
 
       {
-        name:    "rag-app-store",
+        name: "rag-app-store",
         // Only persist settings — chat and documents are session-only
-        partialize: (s) => ({ settings: s.settings }),
+        partialize: (s) => ({ settings: s.settings, chatSessions: s.chatSessions }),
       }
     ),
     { name: "RAG App" }
