@@ -218,6 +218,18 @@ export const useAppStore = create(
 
 
         // ══════════════════════════════════════
+        // DOCUMENT INSIGHTS SLICE
+        // ══════════════════════════════════════
+
+        docInsights: {},   // { [documentId]: { summary, sources, generatedAt } }
+
+        saveDocInsight: (documentId, insight) =>
+          set((s) => ({
+            docInsights: { ...s.docInsights, [documentId]: insight },
+          })),
+
+
+        // ══════════════════════════════════════
         // SETTINGS SLICE  (persisted)
         // ══════════════════════════════════════
 
@@ -285,7 +297,7 @@ export const useAppStore = create(
       {
         name: "rag-app-store",
         // Only persist settings — chat and documents are session-only
-        partialize: (s) => ({ settings: s.settings, chatSessions: s.chatSessions }),
+        partialize: (s) => ({ settings: s.settings, chatSessions: s.chatSessions, docInsights: s.docInsights }),
       }
     ),
     { name: "RAG App" }
