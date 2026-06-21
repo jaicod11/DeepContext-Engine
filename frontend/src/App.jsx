@@ -9,6 +9,7 @@ const DocumentChatPage = lazy(() => import("@/pages/DocumentChatPage"));
 const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
 const ChatHistoryPage = lazy(() => import("@/pages/ChatHistoryPage"));
 const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
 function PageLoader() {
   return (
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/history" element={<ChatHistoryPage />} />
             <Route path="/insights" element={<InsightsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/chat" element={<DocumentChatPage />} />
             <Route path="/chat/:documentId" element={<DocumentChatPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
