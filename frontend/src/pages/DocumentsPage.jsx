@@ -2,8 +2,11 @@
  * DocumentsPage.jsx
  * ─────────────────────────────────────────────────────────────────────────
  * Documents grid page (image 2). Lists all uploaded documents as cards.
- * Clicking a card navigates to /chat/:documentId which opens
- * DocumentChatPage with that document pre-selected.
+ *
+ * Two modes:
+ *  - Normal: click a card → /chat/:documentId (single-document chat)
+ *  - Compare: toggle "Compare" on, select 2-3 cards, then
+ *             "Compare N documents" → /chat/compare?docs=id1,id2,id3
  *
  * Uses the existing useDocuments() hook — no backend or store changes.
  */
@@ -12,10 +15,12 @@ import { useState, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     FileText, Upload, UploadCloud, Search, SlidersHorizontal,
+    Check, Layers, X,
 } from "lucide-react";
 import { useDocuments } from "@/hooks/useDocuments";
 
 const TABS = ["All", "Recent", "Most Chunks", "Unindexed"];
+const MAX_COMPARE = 3;
 
 function formatDate(ts) {
     if (!ts) return "—";
@@ -32,9 +37,17 @@ function formatDate(ts) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function DocCard({ doc, onClick }) {
+function DocCard({ doc, onClick, compareMode, selected, onToggleSelect }) {
     return (
-        <button className="doc-card" onClick={onClick}>
+        <button
+            className="doc-card"
+            onClick={compareMode ? onToggleSelect : onClick}
+        >
+            {compareMode && (
+                <div className={`doc-card__checkbox${selected ? " checked" : ""}`}>
+                    {selected && <Check size={12} strokeWidth={3} />}
+                </div>
+            )}
             <div className="doc-card__top">
                 <div className="doc-card__icon">
                     <FileText size={16} strokeWidth={2} />
@@ -60,6 +73,8 @@ export default function DocumentsPage() {
     const [activeTab, setActiveTab] = useState("All");
     const [search, setSearch] = useState("");
     const [dragOver, setDragOver] = useState(false);
+    const [compareMode, setCompareMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState([]);
     const fileInputRef = useRef();
 
     const filtered = useMemo(() => {
@@ -99,16 +114,43 @@ export default function DocumentsPage() {
         handleFiles(e.dataTransfer.files);
     };
 
+    const toggleCompareMode = () => {
+        setCompareMode((v) => !v);
+        setSelectedIds([]);
+    };
+
+    const toggleSelect = (docId) => {
+        setSelectedIds((prev) => {
+            if (prev.includes(docId)) return prev.filter((id) => id !== docId);
+            if (prev.length >= MAX_COMPARE) return prev; // cap at MAX_COMPARE
+            return [...prev, docId];
+        });
+    };
+
+    const handleStartCompare = () => {
+        if (selectedIds.length < 2) return;
+        navigate(`/chat/compare?docs=${selectedIds.join(",")}`);
+    };
+
     return (
         <div className="docs-page">
 
             {/* Top bar */}
             <div className="docs-page__topbar">
                 <h1>Documents</h1>
-                <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
-                    <Upload size={14} strokeWidth={2.5} />
-                    Upload Document
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                        className={compareMode ? "btn-primary" : "btn-ghost"}
+                        onClick={toggleCompareMode}
+                    >
+                        {compareMode ? <X size={13} strokeWidth={2.5} /> : <Layers size={13} strokeWidth={2} />}
+                        {compareMode ? "Cancel" : "Compare"}
+                    </button>
+                    <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
+                        <Upload size={14} strokeWidth={2.5} />
+                        Upload Document
+                    </button>
+                </div>
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -148,23 +190,32 @@ export default function DocumentsPage() {
                 </div>
             </div>
 
+            {/* Compare mode hint */}
+            {compareMode && (
+                <div style={{ padding: "10px 32px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+                    Select 2–{MAX_COMPARE} documents to chat across them at once
+                </div>
+            )}
+
             {/* Body */}
             <div className="docs-page__body">
 
-                {/* Dropzone */}
-                <div
-                    className={`docs-dropzone${dragOver ? " dragover" : ""}`}
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={handleDrop}
-                >
-                    <div className="docs-dropzone__icon">
-                        <UploadCloud size={18} strokeWidth={2} />
+                {/* Dropzone — hidden in compare mode to reduce clutter */}
+                {!compareMode && (
+                    <div
+                        className={`docs-dropzone${dragOver ? " dragover" : ""}`}
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                        onDrop={handleDrop}
+                    >
+                        <div className="docs-dropzone__icon">
+                            <UploadCloud size={18} strokeWidth={2} />
+                        </div>
+                        <p className="docs-dropzone__title">Drop a file here to analyze</p>
+                        <p className="docs-dropzone__sub">PDF, DOCX, TXT, MD, HTML supported</p>
                     </div>
-                    <p className="docs-dropzone__title">Drop a file here to analyze</p>
-                    <p className="docs-dropzone__sub">PDF, DOCX, TXT, MD, HTML supported</p>
-                </div>
+                )}
 
                 {/* Grid / Empty state */}
                 {filtered.length === 0 ? (
@@ -182,12 +233,31 @@ export default function DocumentsPage() {
                             <DocCard
                                 key={doc.document_id}
                                 doc={doc}
+                                compareMode={compareMode}
+                                selected={selectedIds.includes(doc.document_id)}
+                                onToggleSelect={() => toggleSelect(doc.document_id)}
                                 onClick={() => navigate(`/chat/${doc.document_id}`)}
                             />
                         ))}
                     </div>
                 )}
             </div>
+
+            {/* Floating compare bar */}
+            {compareMode && selectedIds.length > 0 && (
+                <div className="compare-bar">
+                    <span className="compare-bar__text">
+                        <span className="compare-bar__count">{selectedIds.length}</span> of {MAX_COMPARE} selected
+                    </span>
+                    <button
+                        className="btn-primary"
+                        onClick={handleStartCompare}
+                        disabled={selectedIds.length < 2}
+                    >
+                        Compare {selectedIds.length > 0 ? selectedIds.length : ""} documents
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

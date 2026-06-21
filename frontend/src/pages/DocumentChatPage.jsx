@@ -142,12 +142,22 @@ function ChatPanel({ doc, onHighlight }) {
     const settings = useAppStore((s) => s.settings);
     const updateSettings = useAppStore((s) => s.updateSettings);
 
-    // Set namespace to doc's namespace on mount
+    // Scope retrieval to ONLY this document's chunks — without this,
+    // since all docs share the same Pinecone namespace, queries would
+    // silently search across every uploaded document instead of just this one.
     useEffect(() => {
-        if (doc?.namespace) {
-            updateSettings({ namespace: doc.namespace });
+        if (doc?.document_id) {
+            updateSettings({
+                namespace: doc.namespace || "",
+                metadataFilter: { document_id: { $eq: doc.document_id } },
+            });
         }
-    }, [doc?.namespace, updateSettings]);
+        // Reset scoping when leaving this document so other pages
+        // (e.g. Dashboard, general chat) aren't accidentally filtered.
+        return () => {
+            updateSettings({ namespace: "", metadataFilter: null });
+        };
+    }, [doc?.document_id, doc?.namespace, updateSettings]);
 
     // Auto-scroll to bottom
     useEffect(() => {
