@@ -458,7 +458,7 @@ function UploadModal({ onClose, onUploaded }) {
                 <input
                     ref={fileRef}
                     type="file"
-                    accept=".pdf,.docx,.txt,.md,.html"
+                    accept=".pdf,.docx,.txt,.md,.html,.pptx,.xlsx,.xls"
                     multiple
                     style={{ display: "none" }}
                     onChange={(e) => handleFiles([...e.target.files])}

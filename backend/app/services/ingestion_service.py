@@ -4,14 +4,12 @@ services/ingestion_service.py
 Full document ingestion pipeline:
   load → split → embed → upsert to Pinecone
 
-Supports PDF, DOCX, TXT, and HTML files.
-Handles re-ingestion cleanly by deleting old chunks before upserting fresh ones.
+Supports: PDF, DOCX, TXT, MD, HTML, PPTX, XLSX
 """
 
 from __future__ import annotations
 
 import hashlib
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,19 +25,19 @@ logger = get_logger(__name__)
 
 @dataclass
 class IngestionResult:
-    document_id:   str
-    filename:      str
-    chunks_total:  int
+    document_id:      str
+    filename:         str
+    chunks_total:     int
     vectors_upserted: int
-    namespace:     str
+    namespace:        str
 
 
 class IngestionService:
     def __init__(
         self,
-        pinecone: PineconeClient  | None = None,
-        embedder: CachedEmbedder  | None = None,
-        settings: Settings        | None = None,
+        pinecone: PineconeClient | None = None,
+        embedder: CachedEmbedder | None = None,
+        settings: Settings | None = None,
     ) -> None:
         self._pc       = pinecone or get_pinecone_client()
         self._embedder = embedder or get_embedder()
@@ -205,6 +203,9 @@ class IngestionService:
             ".md":   self._load_text,
             ".html": self._load_html,
             ".htm":  self._load_html,
+            ".pptx": self._load_pptx,   # ← NEW
+            ".xlsx": self._load_xlsx,   # ← NEW
+            ".xls":  self._load_xlsx,   # ← NEW (older Excel format)
         }
         loader = loaders.get(suffix)
         if loader is None:
@@ -270,6 +271,84 @@ class IngestionService:
             return p.get_text()
 
         return await asyncio.to_thread(_strip, html)
+
+    @staticmethod
+    async def _load_pptx(path: Path) -> str:
+        """
+        Extract text from PowerPoint files.
+        Iterates: slides → shapes → text frames → paragraphs.
+        Each slide's content is separated by a blank line.
+        Speaker notes are included at the end of each slide block.
+        """
+        import asyncio
+        from pptx import Presentation
+
+        def _read() -> str:
+            prs = Presentation(str(path))
+            slide_texts: list[str] = []
+
+            for slide_num, slide in enumerate(prs.slides, start=1):
+                parts: list[str] = [f"Slide {slide_num}"]
+
+                # Main content shapes
+                for shape in slide.shapes:
+                    if not shape.has_text_frame:
+                        continue
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            parts.append(text)
+
+                # Speaker notes
+                if slide.has_notes_slide:
+                    notes_tf = slide.notes_slide.notes_text_frame
+                    notes_text = notes_tf.text.strip()
+                    if notes_text:
+                        parts.append(f"[Notes] {notes_text}")
+
+                slide_texts.append("\n".join(parts))
+
+            return "\n\n".join(slide_texts)
+
+        return await asyncio.to_thread(_read)
+
+    @staticmethod
+    async def _load_xlsx(path: Path) -> str:
+        """
+        Extract text from Excel files (.xlsx and .xls).
+        Iterates: sheets → rows → cells.
+        Each sheet is prefixed with its name as a heading.
+        Empty rows are skipped. Cell values are tab-separated,
+        rows are newline-separated — preserving the tabular structure
+        for the text splitter to chunk naturally.
+        """
+        import asyncio
+        import openpyxl
+
+        def _read() -> str:
+            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+            sheet_texts: list[str] = []
+
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                rows: list[str] = [f"Sheet: {sheet_name}"]
+
+                for row in ws.iter_rows(values_only=True):
+                    # Skip fully empty rows
+                    if not any(cell is not None for cell in row):
+                        continue
+                    row_text = "\t".join(
+                        str(cell) if cell is not None else "" for cell in row
+                    )
+                    rows.append(row_text)
+
+                if len(rows) > 1:  # sheet has content beyond the heading
+                    sheet_texts.append("\n".join(rows))
+
+            wb.close()
+            return "\n\n".join(sheet_texts)
+
+        return await asyncio.to_thread(_read)
 
     # ─────────────────────────────────────────
     # Utilities

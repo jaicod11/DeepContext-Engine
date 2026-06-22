@@ -103,7 +103,7 @@ export default function DocumentsPage() {
 
     const handleFiles = useCallback(async (files) => {
         const valid = [...files].filter((f) =>
-            /\.(pdf|docx?|txt|md|html?)$/i.test(f.name)
+            /\.(pdf|docx?|txt|md|html?|pptx|xlsx|xls)$/i.test(f.name)
         );
         if (valid.length) await uploadFiles(valid);
     }, [uploadFiles]);
@@ -154,7 +154,7 @@ export default function DocumentsPage() {
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.docx,.txt,.md,.html"
+                    accept=".pdf,.docx,.txt,.md,.html,.pptx,.xlsx,.xls"
                     multiple
                     style={{ display: "none" }}
                     onChange={(e) => handleFiles(e.target.files)}
@@ -213,7 +213,7 @@ export default function DocumentsPage() {
                             <UploadCloud size={18} strokeWidth={2} />
                         </div>
                         <p className="docs-dropzone__title">Drop a file here to analyze</p>
-                        <p className="docs-dropzone__sub">PDF, DOCX, TXT, MD, HTML supported</p>
+                        <p className="docs-dropzone__sub">PDF, DOCX, PPTX, XLSX, TXT, MD, HTML supported</p>
                     </div>
                 )}
 
