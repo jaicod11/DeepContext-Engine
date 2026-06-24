@@ -4,7 +4,11 @@ services/ingestion_service.py
 Full document ingestion pipeline:
   load → split → embed → upsert to Pinecone
 
-Supports: PDF, DOCX, TXT, MD, HTML, PPTX, XLSX
+Page-aware chunking for PDF, PPTX, XLSX:
+  - PDF:  chunks tagged with page_number (1-indexed)
+  - PPTX: chunks tagged with slide_number (1-indexed)
+  - XLSX: chunks tagged with sheet_name
+  - Other formats: page_number = None
 """
 
 from __future__ import annotations
@@ -59,45 +63,30 @@ class IngestionService:
         metadata:    dict | None = None,
         document_id: str | None = None,
     ) -> IngestionResult:
-        """
-        Ingest a document from the filesystem.
-
-        If `document_id` is provided and chunks already exist in Pinecone
-        (identified by metadata.document_id), they are deleted first —
-        enabling clean re-ingestion without duplicates.
-        """
         path   = Path(file_path)
         ns     = namespace or self._settings.pinecone_namespace
         doc_id = document_id or self._file_hash(path)
 
-        logger.info(
-            "ingestion_started",
-            file=path.name,
-            document_id=doc_id,
-            namespace=ns,
-        )
+        logger.info("ingestion_started", file=path.name, document_id=doc_id, namespace=ns)
 
-        # 1. Load raw text
-        text = await self._load_file(path)
+        # Load page-aware content: list of (chunk_text, extra_metadata)
+        page_chunks = await self._load_paged(path)
 
-        # 2. Split into chunks
-        chunks = self._splitter.split_text(text)
-        logger.debug("ingestion_split", file=path.name, chunks=len(chunks))
-
-        # 3. Delete stale vectors if re-ingesting
+        # Delete stale vectors if re-ingesting
         await self._pc.delete_by_filter(
             filter={"document_id": {"$eq": doc_id}},
             namespace=ns,
         )
 
-        # 4. Embed all chunks
-        vectors = await self._embedder.embed_documents(chunks)
+        # Embed all chunks
+        texts   = [chunk for chunk, _ in page_chunks]
+        vectors = await self._embedder.embed_documents(texts)
 
-        # 5. Build VectorRecord list
+        # Build VectorRecord list — each chunk carries its page/slide/sheet metadata
         base_meta = {
             "document_id":  doc_id,
             "source":       path.name,
-            "total_chunks": len(chunks),
+            "total_chunks": len(page_chunks),
             **(metadata or {}),
         }
         records = [
@@ -106,28 +95,28 @@ class IngestionService:
                 values=vec,
                 metadata={
                     **base_meta,
+                    **chunk_meta,          # page_number, slide_number, or sheet_name
                     "text":        chunk,
                     "chunk_index": i,
                 },
             )
-            for i, (chunk, vec) in enumerate(zip(chunks, vectors))
+            for i, ((chunk, chunk_meta), vec) in enumerate(zip(page_chunks, vectors))
         ]
 
-        # 6. Upsert to Pinecone
         upserted = await self._pc.upsert(records, namespace=ns)
 
         logger.info(
             "ingestion_complete",
             file=path.name,
             document_id=doc_id,
-            chunks=len(chunks),
+            chunks=len(page_chunks),
             upserted=upserted,
             namespace=ns,
         )
         return IngestionResult(
             document_id=doc_id,
             filename=path.name,
-            chunks_total=len(chunks),
+            chunks_total=len(page_chunks),
             vectors_upserted=upserted,
             namespace=ns,
         )
@@ -140,7 +129,6 @@ class IngestionService:
         metadata:    dict | None = None,
         document_id: str | None = None,
     ) -> IngestionResult:
-        """Ingest raw text (no file path needed)."""
         ns     = namespace or self._settings.pinecone_namespace
         doc_id = document_id or hashlib.sha256(text.encode()).hexdigest()[:16]
 
@@ -162,6 +150,7 @@ class IngestionService:
                     "text":         chunk,
                     "chunk_index":  i,
                     "total_chunks": len(chunks),
+                    "page_number":  None,
                     **(metadata or {}),
                 },
             )
@@ -182,7 +171,6 @@ class IngestionService:
         document_id: str,
         namespace:   str | None = None,
     ) -> None:
-        """Remove all Pinecone vectors belonging to a document."""
         ns = namespace or self._settings.pinecone_namespace
         await self._pc.delete_by_filter(
             filter={"document_id": {"$eq": document_id}},
@@ -191,42 +179,135 @@ class IngestionService:
         logger.info("document_deleted", document_id=document_id, namespace=ns)
 
     # ─────────────────────────────────────────
-    # File loaders
+    # Page-aware loaders
+    # Returns: list of (chunk_text, extra_metadata_dict)
     # ─────────────────────────────────────────
 
-    async def _load_file(self, path: Path) -> str:
+    async def _load_paged(self, path: Path) -> list[tuple[str, dict]]:
         suffix = path.suffix.lower()
-        loaders = {
-            ".pdf":  self._load_pdf,
-            ".docx": self._load_docx,
-            ".txt":  self._load_text,
-            ".md":   self._load_text,
-            ".html": self._load_html,
-            ".htm":  self._load_html,
-            ".pptx": self._load_pptx,   # ← NEW
-            ".xlsx": self._load_xlsx,   # ← NEW
-            ".xls":  self._load_xlsx,   # ← NEW (older Excel format)
-        }
-        loader = loaders.get(suffix)
-        if loader is None:
+
+        if suffix == ".pdf":
+            return await self._load_pdf_paged(path)
+        elif suffix == ".pptx":
+            return await self._load_pptx_paged(path)
+        elif suffix in (".xlsx", ".xls"):
+            return await self._load_xlsx_paged(path)
+        elif suffix == ".docx":
+            text = await self._load_docx(path)
+        elif suffix in (".txt", ".md"):
+            text = await self._load_text(path)
+        elif suffix in (".html", ".htm"):
+            text = await self._load_html(path)
+        else:
             raise ValueError(
                 f"Unsupported file type: {suffix}. "
-                f"Supported: {list(loaders.keys())}"
+                f"Supported: .pdf, .docx, .txt, .md, .html, .pptx, .xlsx, .xls"
             )
-        return await loader(path)
 
-    @staticmethod
-    async def _load_pdf(path: Path) -> str:
+        # For non-page-aware formats, split normally with no page metadata
+        chunks = self._splitter.split_text(text)
+        return [(chunk, {"page_number": None}) for chunk in chunks]
+
+    async def _load_pdf_paged(self, path: Path) -> list[tuple[str, dict]]:
+        """
+        Extract PDF text page by page.
+        Each chunk is tagged with its 1-indexed page_number.
+        Splitting happens within each page so page attribution is exact.
+        """
         import asyncio
         from pypdf import PdfReader
 
-        def _read() -> str:
+        def _read() -> list[tuple[int, str]]:
             reader = PdfReader(str(path))
-            return "\n\n".join(
-                page.extract_text() or "" for page in reader.pages
-            )
+            pages = []
+            for i, page in enumerate(reader.pages, start=1):
+                text = page.extract_text() or ""
+                if text.strip():
+                    pages.append((i, text))
+            return pages
 
-        return await asyncio.to_thread(_read)
+        raw_pages = await asyncio.to_thread(_read)
+
+        result: list[tuple[str, dict]] = []
+        for page_num, page_text in raw_pages:
+            chunks = self._splitter.split_text(page_text)
+            for chunk in chunks:
+                result.append((chunk, {"page_number": page_num}))
+
+        return result
+
+    async def _load_pptx_paged(self, path: Path) -> list[tuple[str, dict]]:
+        """
+        Extract PPTX text slide by slide.
+        Each chunk is tagged with its 1-indexed slide_number.
+        """
+        import asyncio
+        from pptx import Presentation
+
+        def _read() -> list[tuple[int, str]]:
+            prs = Presentation(str(path))
+            slides = []
+            for slide_num, slide in enumerate(prs.slides, start=1):
+                parts = [f"Slide {slide_num}"]
+                for shape in slide.shapes:
+                    if not shape.has_text_frame:
+                        continue
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            parts.append(text)
+                if slide.has_notes_slide:
+                    notes = slide.notes_slide.notes_text_frame.text.strip()
+                    if notes:
+                        parts.append(f"[Notes] {notes}")
+                if len(parts) > 1:
+                    slides.append((slide_num, "\n".join(parts)))
+            return slides
+
+        raw_slides = await asyncio.to_thread(_read)
+
+        result: list[tuple[str, dict]] = []
+        for slide_num, slide_text in raw_slides:
+            chunks = self._splitter.split_text(slide_text)
+            for chunk in chunks:
+                result.append((chunk, {"slide_number": slide_num, "page_number": slide_num}))
+        return result
+
+    async def _load_xlsx_paged(self, path: Path) -> list[tuple[str, dict]]:
+        """
+        Extract XLSX text sheet by sheet.
+        Each chunk is tagged with its sheet_name.
+        """
+        import asyncio
+        import openpyxl
+
+        def _read() -> list[tuple[str, str]]:
+            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+            sheets = []
+            for sheet_name in wb.sheetnames:
+                ws  = wb[sheet_name]
+                rows = [f"Sheet: {sheet_name}"]
+                for row in ws.iter_rows(values_only=True):
+                    if not any(cell is not None for cell in row):
+                        continue
+                    rows.append("\t".join(str(c) if c is not None else "" for c in row))
+                if len(rows) > 1:
+                    sheets.append((sheet_name, "\n".join(rows)))
+            wb.close()
+            return sheets
+
+        raw_sheets = await asyncio.to_thread(_read)
+
+        result: list[tuple[str, dict]] = []
+        for sheet_name, sheet_text in raw_sheets:
+            chunks = self._splitter.split_text(sheet_text)
+            for chunk in chunks:
+                result.append((chunk, {"sheet_name": sheet_name, "page_number": None}))
+        return result
+
+    # ─────────────────────────────────────────
+    # Non-paged loaders (return full text)
+    # ─────────────────────────────────────────
 
     @staticmethod
     async def _load_docx(path: Path) -> str:
@@ -272,91 +353,12 @@ class IngestionService:
 
         return await asyncio.to_thread(_strip, html)
 
-    @staticmethod
-    async def _load_pptx(path: Path) -> str:
-        """
-        Extract text from PowerPoint files.
-        Iterates: slides → shapes → text frames → paragraphs.
-        Each slide's content is separated by a blank line.
-        Speaker notes are included at the end of each slide block.
-        """
-        import asyncio
-        from pptx import Presentation
-
-        def _read() -> str:
-            prs = Presentation(str(path))
-            slide_texts: list[str] = []
-
-            for slide_num, slide in enumerate(prs.slides, start=1):
-                parts: list[str] = [f"Slide {slide_num}"]
-
-                # Main content shapes
-                for shape in slide.shapes:
-                    if not shape.has_text_frame:
-                        continue
-                    for para in shape.text_frame.paragraphs:
-                        text = para.text.strip()
-                        if text:
-                            parts.append(text)
-
-                # Speaker notes
-                if slide.has_notes_slide:
-                    notes_tf = slide.notes_slide.notes_text_frame
-                    notes_text = notes_tf.text.strip()
-                    if notes_text:
-                        parts.append(f"[Notes] {notes_text}")
-
-                slide_texts.append("\n".join(parts))
-
-            return "\n\n".join(slide_texts)
-
-        return await asyncio.to_thread(_read)
-
-    @staticmethod
-    async def _load_xlsx(path: Path) -> str:
-        """
-        Extract text from Excel files (.xlsx and .xls).
-        Iterates: sheets → rows → cells.
-        Each sheet is prefixed with its name as a heading.
-        Empty rows are skipped. Cell values are tab-separated,
-        rows are newline-separated — preserving the tabular structure
-        for the text splitter to chunk naturally.
-        """
-        import asyncio
-        import openpyxl
-
-        def _read() -> str:
-            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
-            sheet_texts: list[str] = []
-
-            for sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
-                rows: list[str] = [f"Sheet: {sheet_name}"]
-
-                for row in ws.iter_rows(values_only=True):
-                    # Skip fully empty rows
-                    if not any(cell is not None for cell in row):
-                        continue
-                    row_text = "\t".join(
-                        str(cell) if cell is not None else "" for cell in row
-                    )
-                    rows.append(row_text)
-
-                if len(rows) > 1:  # sheet has content beyond the heading
-                    sheet_texts.append("\n".join(rows))
-
-            wb.close()
-            return "\n\n".join(sheet_texts)
-
-        return await asyncio.to_thread(_read)
-
     # ─────────────────────────────────────────
     # Utilities
     # ─────────────────────────────────────────
 
     @staticmethod
     def _file_hash(path: Path) -> str:
-        """Stable document ID derived from file content SHA-256."""
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(65536), b""):

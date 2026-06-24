@@ -21,6 +21,15 @@ import {
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
 
+/* ── Citation label helper ──────────────────────────────────────────────────── */
+function citationLabel(source) {
+    if (source.page_number != null) return `Page ${source.page_number}`;
+    if (source.slide_number != null) return `Slide ${source.slide_number}`;
+    if (source.sheet_name) return `Sheet: ${source.sheet_name}`;
+    return source.source ?? "Source";
+}
+
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 const SUGGESTED_QUESTIONS = [
@@ -246,12 +255,20 @@ function ChatPanel({ doc, onHighlight }) {
                                     )}
                                 </div>
                                 {/* Citation */}
-                                {msg.sources?.[0] && (
-                                    <div className="chat-msg-ai__citation">
-                                        <BookOpen size={11} strokeWidth={2} />
-                                        <span>{msg.sources[0].source}</span>
+                                {msg.sources?.length > 0 && (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                        {msg.sources.slice(0, 3).map((src, si) => (
+                                            <div key={si} className="chat-msg-ai__citation">
+                                                <BookOpen size={11} strokeWidth={2} />
+                                                <span>
+                                                    {citationLabel(src)}
+                                                    {src.source && src.source !== citationLabel(src)
+                                                        ? ` · ${src.source}` : ""}
+                                                </span>
+                                            </div>
+                                        ))}
                                         {msg.latency_ms && (
-                                            <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
+                                            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
                                                 {msg.latency_ms}ms
                                             </span>
                                         )}
@@ -458,7 +475,7 @@ function UploadModal({ onClose, onUploaded }) {
                 <input
                     ref={fileRef}
                     type="file"
-                    accept=".pdf,.docx,.txt,.md,.html,.pptx,.xlsx,.xls"
+                    accept=".pdf,.docx,.txt,.md,.html"
                     multiple
                     style={{ display: "none" }}
                     onChange={(e) => handleFiles([...e.target.files])}

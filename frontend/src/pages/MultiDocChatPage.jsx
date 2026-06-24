@@ -15,6 +15,14 @@ import { FileText, X, User, Zap, BookOpen, ArrowUp } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
 
+function citationLabel(source) {
+    if (source.page_number != null) return `Page ${source.page_number}`;
+    if (source.slide_number != null) return `Slide ${source.slide_number}`;
+    if (source.sheet_name) return `Sheet: ${source.sheet_name}`;
+    return null;
+}
+
+
 const COMPARE_SUGGESTIONS = [
     "What do these documents have in common?",
     "What are the key differences between them?",
@@ -154,14 +162,15 @@ export default function MultiDocChatPage() {
                                                 msg.content
                                             )}
                                         </div>
-                                        {/* Show ALL cited sources here — knowing which doc each
-                        fact came from is the whole point of compare mode */}
                                         {msg.sources?.length > 0 && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                                {[...new Set(msg.sources.map((s) => s.source))].map((src) => (
-                                                    <div key={src} className="chat-msg-ai__citation">
+                                                {msg.sources.slice(0, 4).map((src, si) => (
+                                                    <div key={si} className="chat-msg-ai__citation">
                                                         <BookOpen size={11} strokeWidth={2} />
-                                                        <span>{src}</span>
+                                                        <span>
+                                                            {src.source}
+                                                            {citationLabel(src) ? ` · ${citationLabel(src)}` : ""}
+                                                        </span>
                                                     </div>
                                                 ))}
                                             </div>

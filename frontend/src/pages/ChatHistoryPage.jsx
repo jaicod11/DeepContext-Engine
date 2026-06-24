@@ -15,6 +15,15 @@ import { useNavigate } from "react-router-dom";
 import { FileText, Search, Zap, User, BookOpen, MessageSquare } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 
+function citationLabel(source) {
+    if (!source) return "";
+    if (source.page_number != null) return `Page ${source.page_number}`;
+    if (source.slide_number != null) return `Slide ${source.slide_number}`;
+    if (source.sheet_name) return `Sheet: ${source.sheet_name}`;
+    return "";
+}
+
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 function formatRelativeTime(ts) {
@@ -81,10 +90,19 @@ function TranscriptBubble({ msg }) {
                 <div className="chat-msg-ai__bubble">
                     {msg.error ? <span style={{ color: "#ef4444" }}>{msg.error}</span> : msg.content}
                 </div>
-                {msg.sources?.[0] && (
-                    <div className="chat-msg-ai__citation">
-                        <BookOpen size={11} strokeWidth={2} />
-                        <span>{msg.sources[0].source}</span>
+                {msg.sources?.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {msg.sources.slice(0, 3).map((src, si) => {
+                            const label = citationLabel(src);
+                            return (
+                                <div key={si} className="chat-msg-ai__citation">
+                                    <BookOpen size={11} strokeWidth={2} />
+                                    <span>
+                                        {src.source}{label ? ` · ${label}` : ""}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

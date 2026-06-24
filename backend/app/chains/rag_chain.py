@@ -2,22 +2,14 @@
 chains/rag_chain.py
 --------------------
 LangChain-orchestrated RAG pipeline.
-
-Exposes two chain variants:
-  • RAGChain.run()        — single-turn QA, returns full answer + citations
-  • RAGChain.stream()     — single-turn QA with token-by-token streaming
-  • ConversationalRAGChain.run() — multi-turn with question condensation
-
-Both variants use the two-stage retrieval (Pinecone + reranker) from
-RetrievalService and inject results into the context-aware prompt from
-prompt_templates.py before sending to the LLM.
+Sources now include page_number, slide_number, sheet_name from chunk metadata.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator
 
 from app.chains.prompt_templates import (
@@ -33,19 +25,15 @@ from app.services.retrieval_service import RetrievalService, get_retrieval_servi
 logger = get_logger(__name__)
 
 
-# ─────────────────────────────────────────────
-# Response model
-# ─────────────────────────────────────────────
-
 @dataclass
 class RAGResponse:
-    answer:          str
-    sources:         list[dict]          # [{source, score, chunk_index, text_preview}]
-    query:           str
+    answer:           str
+    sources:          list[dict]
+    query:            str
     total_candidates: int
-    reranked:        bool
-    latency_ms:      int
-    model:           str
+    reranked:         bool
+    latency_ms:       int
+    model:            str
 
     def to_dict(self) -> dict:
         return {
@@ -59,19 +47,26 @@ class RAGResponse:
         }
 
 
-# ─────────────────────────────────────────────
-# Single-turn RAG chain
-# ─────────────────────────────────────────────
+def _build_source(index: int, chunk) -> dict:
+    """
+    Build a source dict from a RankedChunk, pulling page/slide/sheet
+    metadata from the chunk's Pinecone metadata dict.
+    """
+    meta = chunk.metadata or {}
+    return {
+        "index":        index,
+        "source":       chunk.source,
+        "score":        round(chunk.score, 4),
+        "text_preview": chunk.text[:200] + ("…" if len(chunk.text) > 200 else ""),
+        "vector_id":    chunk.vector_id,
+        # Page-level attribution — present for PDFs, PPTX, None for others
+        "page_number":  meta.get("page_number"),
+        "slide_number": meta.get("slide_number"),
+        "sheet_name":   meta.get("sheet_name"),
+    }
+
 
 class RAGChain:
-    """
-    Standard single-turn retrieval-augmented generation.
-
-    Workflow:
-      query → embed → Pinecone ANN → rerank → format_context
-            → ChatPromptTemplate → LLM → parse answer + sources
-    """
-
     def __init__(
         self,
         retrieval:  RetrievalService | None = None,
@@ -90,16 +85,11 @@ class RAGChain:
         top_k:           int  | None = None,
         top_n:           int  | None = None,
     ) -> RAGResponse:
-        """Execute the full RAG pipeline and return a structured response."""
         t0 = time.perf_counter()
 
-        # ── Stage 1+2: Retrieve + rerank ────
         retrieval_result = await self._retrieval.retrieve(
-            query=query,
-            top_k=top_k,
-            top_n=top_n,
-            namespace=namespace,
-            metadata_filter=metadata_filter,
+            query=query, top_k=top_k, top_n=top_n,
+            namespace=namespace, metadata_filter=metadata_filter,
         )
 
         if not retrieval_result.chunks:
@@ -108,67 +98,43 @@ class RAGChain:
                     "The provided documents do not contain sufficient information "
                     "to answer this question."
                 ),
-                sources=[],
-                query=query,
-                total_candidates=0,
+                sources=[], query=query, total_candidates=0,
                 reranked=False,
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 model=self._settings.active_llm_model,
             )
 
-        # ── Build context block ──────────────
         chunk_dicts = [
-            {
-                "text":   c.text,
-                "source": c.source,
-                "score":  c.score,
-            }
+            {"text": c.text, "source": c.source, "score": c.score}
             for c in retrieval_result.chunks
         ]
-        context = format_context(chunk_dicts)
+        context  = format_context(chunk_dicts)
+        messages = RAG_QA_PROMPT.format_messages(context=context, question=query)
 
-        # ── Build prompt ─────────────────────
-        messages = RAG_QA_PROMPT.format_messages(
-            context=context,
-            question=query,
-        )
-
-        # ── Call LLM ─────────────────────────
         langchain_llm = self._llm.get_langchain_llm()
         lc_response   = await langchain_llm.ainvoke(messages)
         answer        = lc_response.content if hasattr(lc_response, "content") \
                         else str(lc_response)
 
-        # ── Build source list ────────────────
+        # Build sources with page attribution
         sources = [
-            {
-                "index":        i + 1,
-                "source":       c.source,
-                "score":        round(c.score, 4),
-                "text_preview": c.text[:200] + ("…" if len(c.text) > 200 else ""),
-                "vector_id":    c.vector_id,
-            }
+            _build_source(i + 1, c)
             for i, c in enumerate(retrieval_result.chunks)
         ]
 
         latency = int((time.perf_counter() - t0) * 1000)
         logger.info(
             "rag_chain_complete",
-            query=query[:80],
-            sources=len(sources),
-            latency_ms=latency,
-            reranked=retrieval_result.reranked,
+            query=query[:80], sources=len(sources),
+            latency_ms=latency, reranked=retrieval_result.reranked,
             model=self._settings.active_llm_model,
         )
 
         return RAGResponse(
-            answer=answer,
-            sources=sources,
-            query=query,
+            answer=answer, sources=sources, query=query,
             total_candidates=retrieval_result.total_candidates,
             reranked=retrieval_result.reranked,
-            latency_ms=latency,
-            model=self._settings.active_llm_model,
+            latency_ms=latency, model=self._settings.active_llm_model,
         )
 
     async def stream(
@@ -179,17 +145,6 @@ class RAGChain:
         top_k:           int  | None = None,
         top_n:           int  | None = None,
     ) -> AsyncIterator[str]:
-        """
-        Stream the LLM answer token-by-token as Server-Sent Events.
-
-        Yields SSE-formatted strings:
-          • "data: <token>\\n\\n"          — answer tokens
-          • "data: [SOURCES] <json>\\n\\n" — sources payload at the end
-          • "data: [DONE]\\n\\n"           — terminal frame
-
-        Usage in a FastAPI route:
-            return StreamingResponse(chain.stream(query), media_type="text/event-stream")
-        """
         retrieval_result = await self._retrieval.retrieve(
             query=query, top_k=top_k, top_n=top_n,
             namespace=namespace, metadata_filter=metadata_filter,
@@ -206,90 +161,59 @@ class RAGChain:
         ]
         context  = format_context(chunk_dicts)
         messages = RAG_QA_PROMPT.format_messages(context=context, question=query)
-        prompt   = "\n".join(
-            f"{m.type.upper()}: {m.content}" for m in messages
-        )
+        prompt   = "\n".join(f"{m.type.upper()}: {m.content}" for m in messages)
 
-        # Stream tokens
         async for token in self._llm.stream(prompt):
             yield f"data: {token}\n\n"
 
-        # Append sources as a final SSE frame
-        sources = [
-            {
-                "index":  i + 1,
-                "source": c.source,
-                "score":  round(c.score, 4),
-                "text_preview": c.text[:200],
-            }
-            for i, c in enumerate(retrieval_result.chunks)
-        ]
+        # Sources with page attribution included in final SSE frame
+        sources = [_build_source(i + 1, c) for i, c in enumerate(retrieval_result.chunks)]
         yield f"data: [SOURCES] {json.dumps(sources)}\n\n"
         yield "data: [DONE]\n\n"
 
 
-# ─────────────────────────────────────────────
-# Multi-turn conversational chain
-# ─────────────────────────────────────────────
+# ─── Multi-turn ───────────────────────────────────────────────────────────────
 
 @dataclass
 class ChatMessage:
-    role:    str   # "user" | "assistant"
+    role:    str
     content: str
 
 
 class ConversationalRAGChain:
-    """
-    Multi-turn RAG that condenses follow-up questions before retrieval.
-
-    Example:
-      Turn 1: "What are the key clauses in the NDA?"
-      Turn 2: "Which of those apply to subcontractors?"  ← condensed to standalone
-
-    The condense step rewrites turn 2 as:
-      "Which NDA clauses apply to subcontractors?"
-    before embedding + retrieval.
-    """
-
     def __init__(
         self,
         retrieval: RetrievalService | None = None,
         llm:       LLMService       | None = None,
         settings:  Settings         | None = None,
     ) -> None:
-        self._base     = RAGChain(retrieval=retrieval, llm=llm, settings=settings)
-        self._llm      = llm     or get_llm_service()
+        self._base = RAGChain(retrieval=retrieval, llm=llm, settings=settings)
+        self._llm  = llm or get_llm_service()
 
     async def run(
         self,
-        query:       str,
-        history:     list[ChatMessage],
-        namespace:   str  | None = None,
-        filter:      dict | None = None,  # noqa: A002
+        query:     str,
+        history:   list[ChatMessage],
+        namespace: str  | None = None,
+        filter:    dict | None = None,  # noqa: A002
     ) -> RAGResponse:
         standalone_query = await self._condense(query, history)
         logger.debug(
             "conversational_rag_condensed",
-            original=query[:80],
-            condensed=standalone_query[:80],
+            original=query[:80], condensed=standalone_query[:80],
         )
         return await self._base.run(
-            query=standalone_query,
-            namespace=namespace,
-            metadata_filter=filter,
+            query=standalone_query, namespace=namespace, metadata_filter=filter,
         )
 
     async def _condense(self, question: str, history: list[ChatMessage]) -> str:
-        """Rewrite a follow-up question as a self-contained query."""
         if not history:
             return question
-
         history_text = "\n".join(
-            f"{m.role.capitalize()}: {m.content}" for m in history[-6:]  # last 3 turns
+            f"{m.role.capitalize()}: {m.content}" for m in history[-6:]
         )
         messages = CONDENSE_QUESTION_PROMPT.format_messages(
-            chat_history=history_text,
-            question=question,
+            chat_history=history_text, question=question,
         )
         langchain_llm = self._llm.get_langchain_llm()
         response      = await langchain_llm.ainvoke(messages)
@@ -297,11 +221,9 @@ class ConversationalRAGChain:
         return condensed.strip()
 
 
-# ─────────────────────────────────────────────
-# Singletons
-# ─────────────────────────────────────────────
+# ─── Singletons ───────────────────────────────────────────────────────────────
 
-_rag_chain_instance: RAGChain | None = None
+_rag_chain_instance:  RAGChain | None = None
 _conv_chain_instance: ConversationalRAGChain | None = None
 
 
