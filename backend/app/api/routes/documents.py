@@ -94,7 +94,7 @@ async def upload_document(
 
     return IngestResponse(
         document_id=result.document_id,
-        filename=result.filename,
+        filename=file.filename or result.filename,   # ← use original filename
         chunks_total=result.chunks_total,
         vectors_upserted=result.vectors_upserted,
         namespace=result.namespace,
@@ -121,7 +121,7 @@ async def ingest_text(
     )
     return IngestResponse(
         document_id=result.document_id,
-        filename=result.filename,
+        filename=file.filename or result.filename,   # ← use original filename
         chunks_total=result.chunks_total,
         vectors_upserted=result.vectors_upserted,
         namespace=result.namespace,

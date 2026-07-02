@@ -1,11 +1,28 @@
+/**
+ * services/api.js
+ * ---------------
+ * Centralised Axios client for the RAG backend.
+ *
+ * All endpoints, request/response shapes, and error normalisation live here.
+ * No component should ever call fetch() or axios directly — always use this module.
+ *
+ * Environment variables (set in .env):
+ *   VITE_API_BASE_URL   — e.g. http://localhost:8000/api/v1
+ *   VITE_API_KEY        — X-API-Key header value
+ */
+
 import axios from "axios";
+
+// ─────────────────────────────────────────────
+// Client factory
+// ─────────────────────────────────────────────
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 const API_KEY = import.meta.env.VITE_API_KEY ?? "";
 
 const client = axios.create({
   baseURL: BASE_URL,
-  timeout: 60_000,          // 60s — LLM calls can be slow
+  timeout: 90_000,          // 90s — LLM calls + retrieval can be slow
   headers: {
     "Content-Type": "application/json",
     "X-API-Key": API_KEY,
@@ -50,8 +67,7 @@ client.interceptors.response.use(
  * @returns {{ status: string, version: string, pinecone: object }}
  */
 export const fetchHealth = async () => {
-  const baseRoot = BASE_URL.replace(/\/api\/v1$/, "");
-  const { data } = await axios.get(`${baseRoot}/health`);
+  const { data } = await client.get("/health");
   return data;
 };
 
@@ -241,8 +257,14 @@ export const uploadDocument = async (file, namespace = null, onProgress = null) 
   form.append("file", file);
   if (namespace) form.append("namespace", namespace);
 
+  // Large files need a much longer timeout:
+  // text extraction + chunking + Gemini embeddings + Pinecone upsert
+  // can take 60-120s for files over 2MB.
+  const UPLOAD_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
   const { data } = await client.post("/documents/upload", form, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: UPLOAD_TIMEOUT,
     onUploadProgress: onProgress
       ? (e) => onProgress(Math.round((e.loaded / e.total) * 100))
       : undefined,

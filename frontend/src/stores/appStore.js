@@ -27,6 +27,7 @@ const makeMessage = (role, content, extras = {}) => ({
   model: null,
   isStreaming: false,
   error: null,
+  timestamp: Date.now(),
   ...extras,
 });
 

@@ -1,16 +1,17 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-    FileText,
-    MessageSquare,
-    Sparkles,
-    Zap,
-    Upload,
+    AreaChart, Area, XAxis, YAxis, Tooltip,
+    ResponsiveContainer, CartesianGrid,
+} from "recharts";
+import {
+    FileText, MessageSquare, Sparkles, Zap, Upload,
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
+
 function formatRelativeTime(ts) {
     if (!ts) return "—";
     const diff = Date.now() - ts;
@@ -39,6 +40,53 @@ function formatDate(ts) {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/* ── Build last-14-days chart data from real chatSessions ─────────────── */
+function buildChartData(chatSessions) {
+    // Build day → question count map from all session messages
+    const dayCounts = {};
+
+    // Seed 14 days so the chart always shows a full range even with no data
+    for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        dayCounts[key] = 0;
+    }
+
+    Object.values(chatSessions ?? {}).forEach((session) => {
+        (session.messages ?? []).forEach((msg) => {
+            if (msg.role !== "user" || !msg.timestamp) return;
+            const key = new Date(msg.timestamp).toLocaleDateString(
+                "en-US", { month: "short", day: "numeric" }
+            );
+            if (key in dayCounts) {
+                dayCounts[key] += 1;
+            }
+        });
+    });
+
+    return Object.entries(dayCounts).map(([day, questions]) => ({ day, questions }));
+}
+
+/* ── Custom tooltip ──────────────────────────────────────────────────────── */
+function ChartTooltip({ active, payload, label }) {
+    if (!active || !payload?.length) return null;
+    return (
+        <div style={{
+            background: "var(--bg-surface-2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-md)",
+            padding: "8px 14px",
+            fontSize: 12,
+        }}>
+            <p style={{ color: "var(--text-muted)", marginBottom: 2 }}>{label}</p>
+            <p style={{ color: "var(--primary)", fontWeight: 600 }}>
+                {payload[0].value} question{payload[0].value !== 1 ? "s" : ""}
+            </p>
+        </div>
+    );
+}
+
 /* ── Sub-components ─────────────────────────────────────────────────────── */
 function StatCard({ icon: Icon, label, value, delta }) {
     return (
@@ -65,7 +113,6 @@ function DocRow({ doc, onClick }) {
                 <div className="doc-row__name">{doc.filename}</div>
                 <div className="doc-row__meta">
                     {doc.chunks_total ?? "?"} chunks
-                    {doc.questionCount ? ` · ${doc.questionCount} questions` : ""}
                 </div>
             </div>
             <div className="doc-row__date">{formatDate(doc.uploadedAt)}</div>
@@ -90,43 +137,47 @@ function QuestionRow({ message, docName }) {
 export default function Dashboard() {
     const navigate = useNavigate();
 
-    // Real data from existing store/hooks
     const { documents, indexStats, refreshStats } = useDocuments();
-    const messages = useAppStore((s) => s.messages ?? []);
-    const openUpload = useAppStore((s) => s.openUploadModal);
+    const chatSessions = useAppStore((s) => s.chatSessions ?? {});
 
     useEffect(() => { refreshStats(); }, [refreshStats]);
 
-    // Derive stats from real data
+    // Aggregate real stats across ALL sessions (not just current session)
+    const { totalQuestions, totalAnswers, recentQuestions } = useMemo(() => {
+        let qCount = 0;
+        let aCount = 0;
+        const allUserMsgs = [];
+
+        Object.values(chatSessions).forEach((session) => {
+            (session.messages ?? []).forEach((msg) => {
+                if (msg.role === "user") { qCount++; allUserMsgs.push({ ...msg, _docName: session.filename }); }
+                if (msg.role === "assistant") { aCount++; }
+            });
+        });
+
+        const recent = allUserMsgs
+            .filter((m) => m.timestamp)
+            .sort((a, b) => b.timestamp - a.timestamp)
+            .slice(0, 4);
+
+        return { totalQuestions: qCount, totalAnswers: aCount, recentQuestions: recent };
+    }, [chatSessions]);
+
     const docCount = documents.length;
     const vectorCount = indexStats?.total_vectors ?? 0;
-    const userMessages = messages.filter((m) => m.role === "user");
-    const assistantMsgs = messages.filter((m) => m.role === "assistant");
-    const questionsCount = userMessages.length;
-    const insightsCount = assistantMsgs.length;
 
-    // Build per-document question count map
-    const docQuestionMap = {};
-    userMessages.forEach((m) => {
-        if (m.namespace || m.docId) {
-            const key = m.namespace ?? m.docId;
-            docQuestionMap[key] = (docQuestionMap[key] ?? 0) + 1;
-        }
-    });
+    const recentDocs = useMemo(() =>
+        [...documents]
+            .sort((a, b) => (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0))
+            .slice(0, 5),
+        [documents]);
 
-    // Recent questions: last 4 user messages, newest first
-    const recentQuestions = [...userMessages]
-        .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-        .slice(0, 4);
+    // Real chart data derived from session timestamps
+    const chartData = useMemo(() => buildChartData(chatSessions), [chatSessions]);
+    const chartMax = Math.max(...chartData.map((d) => d.questions), 5);
+    const hasActivity = chartData.some((d) => d.questions > 0);
 
-    // Recent documents: sorted by uploadedAt, newest first
-    const recentDocs = [...documents]
-        .sort((a, b) => (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0))
-        .slice(0, 5);
-
-    const handleUpload = useCallback(() => {
-        navigate("/documents");
-    }, [navigate]);
+    const handleUpload = useCallback(() => { navigate("/documents"); }, [navigate]);
 
     return (
         <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
@@ -141,7 +192,10 @@ export default function Dashboard() {
             </div>
 
             {/* Body */}
-            <div style={{ flex: 1, padding: "24px 32px", display: "flex", flexDirection: "column", gap: 24, overflow: "auto" }}>
+            <div style={{
+                flex: 1, padding: "24px 32px",
+                display: "flex", flexDirection: "column", gap: 24, overflow: "auto",
+            }}>
 
                 {/* Stat Cards */}
                 <div className="stat-grid">
@@ -154,21 +208,80 @@ export default function Dashboard() {
                     <StatCard
                         icon={MessageSquare}
                         label="Questions Asked"
-                        value={questionsCount}
-                        delta={questionsCount > 0 ? `${questionsCount} this session` : "Ask your first question"}
+                        value={totalQuestions}
+                        delta={totalQuestions > 0 ? "Across all sessions" : "Ask your first question"}
                     />
                     <StatCard
                         icon={Sparkles}
                         label="Insights Generated"
-                        value={insightsCount}
-                        delta={insightsCount > 0 ? `${insightsCount} answers generated` : "No answers yet"}
+                        value={totalAnswers}
+                        delta={totalAnswers > 0 ? "Answers generated" : "No answers yet"}
                     />
                     <StatCard
                         icon={Zap}
                         label="Avg. Analysis Time"
                         value={vectorCount > 0 ? "~2.4s" : "—"}
-                        delta={vectorCount > 0 ? "↓ Fast two-stage retrieval" : "Upload a document to start"}
+                        delta={vectorCount > 0 ? "↓ Two-stage retrieval" : "Upload a document to start"}
                     />
+                </div>
+
+                {/* Activity Chart */}
+                <div className="panel" style={{ padding: 0 }}>
+                    <div className="panel__header">
+                        <span className="panel__title">Activity — Questions per day</span>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Last 14 days</span>
+                    </div>
+                    <div style={{ padding: "20px 24px 16px" }}>
+                        {!hasActivity ? (
+                            <div className="empty-state" style={{ padding: "32px 0", minHeight: 120 }}>
+                                <MessageSquare size={20} />
+                                <span>No activity yet — start asking questions to see your usage here</span>
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={160}>
+                                <AreaChart
+                                    data={chartData}
+                                    margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+                                >
+                                    <defs>
+                                        <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid
+                                        strokeDasharray="3 3"
+                                        stroke="var(--border)"
+                                        vertical={false}
+                                    />
+                                    <XAxis
+                                        dataKey="day"
+                                        tick={{ fill: "var(--text-muted)", fontSize: 10 }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        interval={1}
+                                    />
+                                    <YAxis
+                                        tick={{ fill: "var(--text-muted)", fontSize: 10 }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        allowDecimals={false}
+                                        domain={[0, chartMax + 1]}
+                                    />
+                                    <Tooltip content={<ChartTooltip />} />
+                                    <Area
+                                        type="monotone"
+                                        dataKey="questions"
+                                        stroke="#22c55e"
+                                        strokeWidth={2}
+                                        fill="url(#activityGradient)"
+                                        dot={false}
+                                        activeDot={{ r: 4, fill: "#22c55e", strokeWidth: 0 }}
+                                    />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        )}
+                    </div>
                 </div>
 
                 {/* Panels row */}
@@ -187,7 +300,11 @@ export default function Dashboard() {
                                 <div className="empty-state">
                                     <FileText size={28} />
                                     <span>No documents uploaded yet</span>
-                                    <button className="btn-primary" style={{ marginTop: 8, fontSize: 12 }} onClick={handleUpload}>
+                                    <button
+                                        className="btn-primary"
+                                        style={{ marginTop: 8, fontSize: 12 }}
+                                        onClick={handleUpload}
+                                    >
                                         Upload your first document
                                     </button>
                                 </div>
@@ -207,7 +324,7 @@ export default function Dashboard() {
                     <div className="panel panel--aside">
                         <div className="panel__header">
                             <span className="panel__title">Recent Questions</span>
-                            <button className="panel__view-all" onClick={() => navigate("/documents")}>
+                            <button className="panel__view-all" onClick={() => navigate("/history")}>
                                 View all
                             </button>
                         </div>
@@ -222,9 +339,7 @@ export default function Dashboard() {
                                     <QuestionRow
                                         key={msg.id ?? i}
                                         message={msg}
-                                        docName={
-                                            documents[0]?.filename ?? "Document"
-                                        }
+                                        docName={msg._docName}
                                     />
                                 ))
                             )}
