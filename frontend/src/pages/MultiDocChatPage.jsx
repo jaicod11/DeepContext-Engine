@@ -29,6 +29,12 @@ const COMPARE_SUGGESTIONS = [
     "Summarize each document separately",
 ];
 
+
+function stripSourceTags(text) {
+    if (!text) return text;
+    return text.replace(/\[SOURCE \d+\]/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
 export default function MultiDocChatPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -159,7 +165,7 @@ export default function MultiDocChatPage() {
                                             ) : msg.error ? (
                                                 <span style={{ color: "#ef4444" }}>{msg.error}</span>
                                             ) : (
-                                                msg.content
+                                                stripSourceTags(msg.content)
                                             )}
                                         </div>
                                         {msg.sources?.length > 0 && (

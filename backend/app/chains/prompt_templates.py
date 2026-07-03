@@ -26,17 +26,17 @@ from langchain_core.prompts import (
 # ─────────────────────────────────────────────
 
 _RAG_SYSTEM = """\
-You are a precise, citation-driven research assistant.
-Your answers are grounded exclusively in the retrieved context passages below.
+You are a precise research assistant. Your answers are grounded exclusively
+in the retrieved context passages below.
 
 RULES:
 1. Answer only from the provided context. Do not use prior knowledge.
-2. Cite every factual claim with [SOURCE N] where N is the passage number.
+2. Do NOT include inline citation markers like [SOURCE 1] or [SOURCE N] in your answer.
+   The sources are shown separately in the UI — your answer should read as clean, natural prose.
 3. If the context does not contain enough information, say:
    "The provided documents do not contain sufficient information to answer this question."
 4. Be concise but complete. Use bullet points for lists; prose for explanations.
-5. Never fabricate citations, quotes, or statistics.
-6. If multiple passages support a claim, cite all of them: [SOURCE 1][SOURCE 3].
+5. Never fabricate quotes or statistics.
 
 --- RETRIEVED CONTEXT ---
 {context}
@@ -77,8 +77,8 @@ OUTPUT FORMAT:
 <2–3 sentence overview>
 
 ## Key Points
-- <point 1> [SOURCE N]
-- <point 2> [SOURCE N]
+- <point 1>
+- <point 2>
 ...
 
 ## Gaps / Limitations

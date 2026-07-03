@@ -58,31 +58,64 @@ class GeminiEmbedder(BaseEmbedder):
     Calls Gemini Embeddings REST API directly.
     Bypasses langchain-google-genai and google-genai SDK version issues entirely.
     """
-    _DIM = 3072   # ← changed from 768
+    _DIM = 3072
     _URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"
 
     def __init__(self, settings: Settings) -> None:
         import httpx
         self._api_key = settings.gemini_api_key
         self._batch   = settings.embedding_batch_size
-        self._client  = httpx.Client(timeout=30)
+        self._client  = httpx.Client(timeout=60)  # increased from 30s
 
     @property
     def dimension(self) -> int:
         return self._DIM
 
     def _embed_one(self, text: str) -> list[float]:
-        response = self._client.post(
-            self._URL,
-            params={"key": self._api_key},
-            json={"model": "models/text-embedding-004", "content": {"parts": [{"text": text}]}},
-        )
-        response.raise_for_status()
-        return response.json()["embedding"]["values"]
+        """
+        Embed one text chunk with automatic retry on transient errors.
+        Uses time.sleep (not asyncio.sleep) because this runs inside
+        asyncio.to_thread — it's a sync method in a thread pool.
+        """
+        import time
+
+        last_err: Exception | None = None
+        for attempt in range(3):                          # up to 3 attempts
+            try:
+                response = self._client.post(
+                    self._URL,
+                    params={"key": self._api_key},
+                    # Fix: model name must match the URL — gemini-embedding-001
+                    json={
+                        "model": "models/gemini-embedding-001",
+                        "content": {"parts": [{"text": text}]},
+                    },
+                )
+                response.raise_for_status()
+                return response.json()["embedding"]["values"]
+            except Exception as e:
+                import httpx as _httpx
+                # Retry on 429 (rate limit), 500, 503 (transient server errors)
+                if isinstance(e, _httpx.HTTPStatusError) and                         e.response.status_code in (429, 500, 503) and                         attempt < 2:
+                    wait = 2 ** attempt          # 1s, then 2s
+                    logger.warning(
+                        "embedding_retry",
+                        attempt=attempt + 1,
+                        status=e.response.status_code,
+                        wait_seconds=wait,
+                    )
+                    time.sleep(wait)
+                    last_err = e
+                    continue
+                raise
+        raise last_err  # type: ignore[misc]
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        # Filter empty/whitespace strings — Gemini rejects them with 400
         results: list[list[float]] = []
         for text in texts:
+            if not text or not text.strip():
+                continue                           # skip empty chunks
             vec = await asyncio.to_thread(self._embed_one, text)
             results.append(vec)
         return results

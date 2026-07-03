@@ -112,6 +112,12 @@ function TranscriptBubble({ msg }) {
 
 /* ── ChatHistoryPage ────────────────────────────────────────────────────── */
 
+
+function stripSourceTags(text) {
+    if (!text) return text;
+    return text.replace(/\[SOURCE \d+\]/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
 export default function ChatHistoryPage() {
     const navigate = useNavigate();
     const chatSessions = useAppStore((s) => s.chatSessions);

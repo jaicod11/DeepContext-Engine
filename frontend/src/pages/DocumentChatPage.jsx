@@ -21,6 +21,13 @@ import {
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
 
+
+/* ── Strip inline [SOURCE N] tags from answer text ──────────────────────── */
+function stripSourceTags(text) {
+    if (!text) return text;
+    return text.replace(/\[SOURCE \d+\]/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
 /* ── Citation label helper ──────────────────────────────────────────────────── */
 function citationLabel(source) {
     if (source.page_number != null) return `Page ${source.page_number}`;
@@ -251,7 +258,7 @@ function ChatPanel({ doc, onHighlight }) {
                                     ) : msg.error ? (
                                         <span style={{ color: "#ef4444" }}>{msg.error}</span>
                                     ) : (
-                                        msg.content
+                                        stripSourceTags(msg.content)
                                     )}
                                 </div>
                                 {/* Citation */}
