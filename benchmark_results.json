@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-07-04T17:26:25.627752",
+  "corpus_stats": null,
+  "latency_summary": {
+    "total_latency_s": {
+      "mean": null,
+      "median": null,
+      "p95": null,
+      "min": null,
+      "max": null
+    },
+    "time_to_first_token_s": {
+      "mean": null,
+      "median": null
+    },
+    "sample_size": 0
+  },
+  "per_query_latency": [
+    {
+      "query": "What is the main topic of this document?",
+      "runs": []
+    },
+    {
+      "query": "Summarize the key findings in two sentences.",
+      "runs": []
+    },
+    {
+      "query": "What numbers or statistics are mentioned?",
+      "runs": []
+    },
+    {
+      "query": "Who are the main people or entities discussed?",
+      "runs": []
+    },
+    {
+      "query": "What conclusions does the document draw?",
+      "runs": []
+    }
+  ],
+  "cache_effect": null,
+  "redis_global_stats": null
+}
