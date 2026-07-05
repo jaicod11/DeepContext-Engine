@@ -60,6 +60,12 @@ HOW TO ANSWER:
 8. If the context truly does not contain enough information, say:
    "The provided documents do not contain sufficient information to answer this question."
 9. Never fabricate facts, quotes, or statistics not present in the context.
+10. Retrieved passages may have been split at arbitrary points and can start
+    or end mid-sentence, mid-number, or mid-word. Do NOT copy such fragments
+    verbatim into your answer. Always reconstruct the full, intended meaning
+    and express it in a complete, grammatically correct sentence of your own
+    — never let a dangling word-fragment, stray lowercase continuation, or
+    cut-off number appear in your output.
 
 --- RETRIEVED CONTEXT ---
 {context}
