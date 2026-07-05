@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAppStore } from "@/stores/appStore";
 import IconSidebar from "@/components/layout/IconSidebar";
 import Toast from "@/components/shared/Toast";
+import UploadStatusWidget from "@/components/shared/UploadStatusWidget";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const DocumentChatPage = lazy(() => import("@/pages/DocumentChatPage"));
@@ -50,6 +51,8 @@ export default function App() {
       {toasts?.slice(-1).map((t) => (
         <Toast key={t.id} toast={t} onClose={() => dismissToast(t.id)} />
       ))}
+
+      <UploadStatusWidget />
     </div>
   );
 }
