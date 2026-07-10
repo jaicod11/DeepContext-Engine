@@ -145,10 +145,26 @@ class RAGChain:
         top_k:           int  | None = None,
         top_n:           int  | None = None,
     ) -> AsyncIterator[str]:
-        retrieval_result = await self._retrieval.retrieve(
-            query=query, top_k=top_k, top_n=top_n,
-            namespace=namespace, metadata_filter=metadata_filter,
-        )
+        """
+        Stream tokens as SSE frames.
+
+        IMPORTANT: this generator must never let an exception propagate
+        uncaught — doing so kills the underlying HTTP connection mid-chunk,
+        which browsers report as net::ERR_INCOMPLETE_CHUNKED_ENCODING and
+        surfaces to the user as a generic, unhelpful "network error".
+        Instead, any failure is caught and sent as a proper SSE error
+        frame, then the stream is closed cleanly with [DONE].
+        """
+        try:
+            retrieval_result = await self._retrieval.retrieve(
+                query=query, top_k=top_k, top_n=top_n,
+                namespace=namespace, metadata_filter=metadata_filter,
+            )
+        except Exception as e:
+            logger.error("stream_retrieval_failed", error=str(e))
+            yield f"data: [ERROR] Retrieval failed: {str(e)[:200]}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         if not retrieval_result.chunks:
             yield "data: The provided documents do not contain sufficient information.\n\n"
@@ -163,8 +179,22 @@ class RAGChain:
         messages = RAG_QA_PROMPT.format_messages(context=context, question=query)
         prompt   = "\n".join(f"{m.type.upper()}: {m.content}" for m in messages)
 
-        async for token in self._llm.stream(prompt):
-            yield f"data: {token}\n\n"
+        try:
+            async for token in self._llm.stream(prompt):
+                yield f"data: {token}\n\n"
+        except Exception as e:
+            # Gemini overload (503), rate limit (429), or any transient
+            # network failure mid-generation lands here. We still close
+            # the HTTP stream cleanly instead of crashing the connection.
+            logger.error("stream_generation_failed", error=str(e), query=query[:80])
+            friendly = (
+                "The model is temporarily overloaded. Please try again in a moment."
+                if "overload" in str(e).lower() or "503" in str(e) or "UNAVAILABLE" in str(e)
+                else f"Generation failed: {str(e)[:200]}"
+            )
+            yield f"data: [ERROR] {friendly}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # Sources with page attribution included in final SSE frame
         sources = [_build_source(i + 1, c) for i, c in enumerate(retrieval_result.chunks)]
