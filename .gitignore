@@ -229,3 +229,5 @@ junit.xml
 tmp/
 temp/
 requirements_actual.txt
+
+deepcontext.db

@@ -1,12 +1,3 @@
-"""
-main.py
--------
-FastAPI application factory with lifespan management.
-
-FIX: Removed redundant api_router import — routes are included directly
-     to avoid any double-prefix confusion.
-"""
-
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -15,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.database import init_db
 from app.core.logging import RequestIDMiddleware, get_logger, setup_logging
 from app.vectorstore.embeddings import get_embedder, validate_embedding_dimension
 from app.vectorstore.pinecone_client import get_pinecone_client
@@ -34,11 +26,16 @@ async def lifespan(app: FastAPI):
                     "pinecone_index_name", "log_level"}},
     )
 
-    # 1. Validate embedding ↔ Pinecone dimension match
+    # 1. Create user/document tables if they don't exist.
+    #    Fast + local, so it runs first — every user-scoped route
+    #    depends on these tables being present.
+    await init_db()
+
+    # 2. Validate embedding ↔ Pinecone dimension match
     embedder = get_embedder()
     await validate_embedding_dimension(embedder, settings.pinecone_dimension)
 
-    # 2. Ensure Pinecone index exists and is ready
+    # 3. Ensure Pinecone index exists and is ready
     pc = get_pinecone_client()
     await pc.initialise()
 
@@ -78,14 +75,17 @@ def create_app() -> FastAPI:
 
     # ── Routers ───────────────────────────────────────────────────────────
     # Import here to avoid circular imports at module level
+    from app.api.routes.auth      import router as auth_router
     from app.api.routes.health    import router as health_router
     from app.api.routes.documents import router as documents_router
     from app.api.routes.query     import router as query_router
 
-    # health_router    → GET  /health          (no prefix — documents.py adds /documents)
-    # documents_router → POST /api/v1/documents/...  (router already has prefix="/documents")
-    # query_router     → POST /api/v1/query/...       (router already has prefix="/query")
+    # health_router    → GET  /health                    (no prefix)
+    # auth_router      → POST /api/v1/auth/...           (router has prefix="/auth")
+    # documents_router → POST /api/v1/documents/...      (router has prefix="/documents")
+    # query_router     → POST /api/v1/query/...          (router has prefix="/query")
     app.include_router(health_router)
+    app.include_router(auth_router,      prefix="/api/v1")
     app.include_router(documents_router, prefix="/api/v1")
     app.include_router(query_router,     prefix="/api/v1")
 

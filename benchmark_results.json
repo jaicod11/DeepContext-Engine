@@ -1,6 +1,12 @@
 {
-  "timestamp": "2026-07-04T17:26:25.627752",
-  "corpus_stats": null,
+  "timestamp": "2026-08-02T19:13:29.520564",
+  "corpus_stats": {
+    "total_vector_count": 414,
+    "dimension": 3072,
+    "namespaces": {
+      "default": 414
+    }
+  },
   "latency_summary": {
     "total_latency_s": {
       "mean": null,
@@ -38,5 +44,9 @@
     }
   ],
   "cache_effect": null,
-  "redis_global_stats": null
+  "redis_global_stats": {
+    "keyspace_hits": 84,
+    "keyspace_misses": 81,
+    "hit_rate_pct": 50.9
+  }
 }

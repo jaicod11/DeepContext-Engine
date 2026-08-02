@@ -78,7 +78,11 @@ class Settings(BaseSettings):
     debug: bool           = Field(default=False)
     secret_key: str       = Field(
         default_factory=lambda: secrets.token_urlsafe(32),
-        description="Used for signing tokens; always set explicitly in production",
+        description=(
+            "Signs JWT access tokens. MUST be set explicitly in .env — "
+            "the random default is regenerated on every process start, "
+            "which silently invalidates every outstanding login token."
+        ),
     )
 
     # ── Server ───────────────────────────────
@@ -93,11 +97,33 @@ class Settings(BaseSettings):
         description="React dev servers; restrict in production",
     )
 
+    # ── Auth / Database ──────────────────────
+    database_url: str     = Field(
+        default="sqlite+aiosqlite:///./deepcontext.db",
+        description=(
+            "SQLAlchemy async URL for user + document-library storage. "
+            "SQLite by default (single file, zero extra infra). "
+            "Swap to postgresql+asyncpg://... with no code changes."
+        ),
+    )
+    jwt_algorithm: str    = Field(
+        default="HS256",
+        description="JWT signing algorithm; HS256 uses secret_key symmetrically",
+    )
+    access_token_expire_minutes: int = Field(
+        default=60 * 24 * 7,   # 7 days
+        ge=5,
+        description="How long a login token stays valid before re-login is required",
+    )
+
     # ── API Security ─────────────────────────
     api_key_header: str   = Field(default="X-API-Key")
     api_keys: list[str]   = Field(
         default=[],
-        description="Comma-separated list of valid API keys; empty = auth disabled in dev",
+        description=(
+            "Legacy shared-secret auth. Superseded by JWT user auth for "
+            "all user-facing routes; retained for service-to-service use."
+        ),
     )
     rate_limit_per_minute: int = Field(default=60, ge=1)
 
@@ -110,7 +136,11 @@ class Settings(BaseSettings):
     pinecone_index_name: str      = Field(default="rag-index")
     pinecone_namespace: str       = Field(
         default="default",
-        description="Namespace for multi-tenancy; use per-user or per-project values",
+        description=(
+            "Fallback namespace only. With auth enabled, every user-facing "
+            "route derives its namespace from the authenticated user "
+            "(user_<uuid>), never from this setting."
+        ),
     )
     pinecone_metric: PineconeMetric = Field(default=PineconeMetric.COSINE)
     pinecone_dimension: int       = Field(
@@ -151,6 +181,7 @@ class Settings(BaseSettings):
         default=["\n\n", "\n", ". ", " ", ""],
         description="LangChain RecursiveCharacterTextSplitter separators (in priority order)",
     )
+    llm_fallback_chain: list[str] = Field(default_factory=list)
 
     # ── Embedding ────────────────────────────
     embedding_provider: EmbeddingProvider = Field(default=EmbeddingProvider.GEMINI)
@@ -255,11 +286,6 @@ class Settings(BaseSettings):
     def _production_guards(self) -> "Settings":
         """Enforce stricter rules when running in production."""
         if self.environment == Environment.PRODUCTION:
-            if not self.api_keys:
-                raise ValueError(
-                    "api_keys must not be empty in production — "
-                    "set the API_KEYS environment variable."
-                )
             if self.debug:
                 raise ValueError("debug must be False in production.")
             if self.reload:
@@ -306,6 +332,7 @@ class Settings(BaseSettings):
         sensitive = {
             "pinecone_api_key", "gemini_api_key", "secret_key",
             "api_keys", "aws_secret_access_key", "sentry_dsn",
+            "database_url",   # may embed DB credentials once off SQLite
         }
         data = self.model_dump()
         for key in sensitive:

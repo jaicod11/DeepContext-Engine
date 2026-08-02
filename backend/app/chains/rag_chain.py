@@ -2,7 +2,16 @@
 chains/rag_chain.py
 --------------------
 LangChain-orchestrated RAG pipeline.
-Sources now include page_number, slide_number, sheet_name from chunk metadata.
+
+Sources include page_number, slide_number, sheet_name from chunk metadata.
+
+FALLBACK CHAIN COVERAGE: both run() (non-streaming) and _condense()
+(multi-turn question rewriting) now call self._llm.generate(prompt)
+directly instead of LangChain's .ainvoke(). This routes them through
+LLMService's fallback chain (see llm_service.py) — previously only
+stream() benefited from fallback/retry, so a single-shot /query call
+or a conversational condense step could still hard-fail on the first
+overloaded model with no fallback at all.
 """
 
 from __future__ import annotations
@@ -23,6 +32,19 @@ from app.services.llm_service import LLMService, get_llm_service
 from app.services.retrieval_service import RetrievalService, get_retrieval_service
 
 logger = get_logger(__name__)
+
+
+def _messages_to_prompt(messages) -> str:
+    """Flatten LangChain-style message objects into a single prompt string."""
+    return "\n".join(f"{m.type.upper()}: {m.content}" for m in messages)
+
+
+def _friendly_error(e: Exception) -> str:
+    """Turn a raw exception (often a Gemini 503/429) into a readable message."""
+    msg = str(e)
+    if "overload" in msg.lower() or "503" in msg or "UNAVAILABLE" in msg:
+        return "The model is temporarily overloaded. Please try again in a moment."
+    return f"Generation failed: {msg[:200]}"
 
 
 @dataclass
@@ -59,7 +81,6 @@ def _build_source(index: int, chunk) -> dict:
         "score":        round(chunk.score, 4),
         "text_preview": chunk.text[:200] + ("…" if len(chunk.text) > 200 else ""),
         "vector_id":    chunk.vector_id,
-        # Page-level attribution — present for PDFs, PPTX, None for others
         "page_number":  meta.get("page_number"),
         "slide_number": meta.get("slide_number"),
         "sheet_name":   meta.get("sheet_name"),
@@ -87,10 +108,20 @@ class RAGChain:
     ) -> RAGResponse:
         t0 = time.perf_counter()
 
-        retrieval_result = await self._retrieval.retrieve(
-            query=query, top_k=top_k, top_n=top_n,
-            namespace=namespace, metadata_filter=metadata_filter,
-        )
+        try:
+            retrieval_result = await self._retrieval.retrieve(
+                query=query, top_k=top_k, top_n=top_n,
+                namespace=namespace, metadata_filter=metadata_filter,
+            )
+        except Exception as e:
+            logger.error("run_retrieval_failed", error=str(e))
+            return RAGResponse(
+                answer=f"Retrieval failed: {str(e)[:200]}",
+                sources=[], query=query, total_candidates=0,
+                reranked=False,
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                model=self._settings.active_llm_model,
+            )
 
         if not retrieval_result.chunks:
             return RAGResponse(
@@ -110,31 +141,43 @@ class RAGChain:
         ]
         context  = format_context(chunk_dicts)
         messages = RAG_QA_PROMPT.format_messages(context=context, question=query)
+        prompt   = _messages_to_prompt(messages)
 
-        langchain_llm = self._llm.get_langchain_llm()
-        lc_response   = await langchain_llm.ainvoke(messages)
-        answer        = lc_response.content if hasattr(lc_response, "content") \
-                        else str(lc_response)
+        try:
+            # Routed through LLMService.generate() — full fallback chain
+            # coverage. If gemini-3.5-flash is overloaded, this
+            # transparently retries on gemini-2.5-flash, etc.
+            answer = await self._llm.generate(prompt)
+        except Exception as e:
+            logger.error("run_generation_failed", error=str(e), query=query[:80])
+            return RAGResponse(
+                answer=_friendly_error(e),
+                sources=[], query=query,
+                total_candidates=retrieval_result.total_candidates,
+                reranked=retrieval_result.reranked,
+                latency_ms=int((time.perf_counter() - t0) * 1000),
+                model=self._settings.active_llm_model,
+            )
 
-        # Build sources with page attribution
         sources = [
             _build_source(i + 1, c)
             for i, c in enumerate(retrieval_result.chunks)
         ]
 
-        latency = int((time.perf_counter() - t0) * 1000)
+        latency     = int((time.perf_counter() - t0) * 1000)
+        used_model  = self._llm.last_used_model or self._settings.active_llm_model
         logger.info(
             "rag_chain_complete",
             query=query[:80], sources=len(sources),
             latency_ms=latency, reranked=retrieval_result.reranked,
-            model=self._settings.active_llm_model,
+            model=used_model,
         )
 
         return RAGResponse(
             answer=answer, sources=sources, query=query,
             total_candidates=retrieval_result.total_candidates,
             reranked=retrieval_result.reranked,
-            latency_ms=latency, model=self._settings.active_llm_model,
+            latency_ms=latency, model=used_model,
         )
 
     async def stream(
@@ -150,8 +193,7 @@ class RAGChain:
 
         IMPORTANT: this generator must never let an exception propagate
         uncaught — doing so kills the underlying HTTP connection mid-chunk,
-        which browsers report as net::ERR_INCOMPLETE_CHUNKED_ENCODING and
-        surfaces to the user as a generic, unhelpful "network error".
+        which browsers report as net::ERR_INCOMPLETE_CHUNKED_ENCODING.
         Instead, any failure is caught and sent as a proper SSE error
         frame, then the stream is closed cleanly with [DONE].
         """
@@ -177,26 +219,19 @@ class RAGChain:
         ]
         context  = format_context(chunk_dicts)
         messages = RAG_QA_PROMPT.format_messages(context=context, question=query)
-        prompt   = "\n".join(f"{m.type.upper()}: {m.content}" for m in messages)
+        prompt   = _messages_to_prompt(messages)
 
         try:
+            # self._llm.stream() already walks the full fallback chain
+            # internally (see llm_service.py) before this can raise.
             async for token in self._llm.stream(prompt):
                 yield f"data: {token}\n\n"
         except Exception as e:
-            # Gemini overload (503), rate limit (429), or any transient
-            # network failure mid-generation lands here. We still close
-            # the HTTP stream cleanly instead of crashing the connection.
             logger.error("stream_generation_failed", error=str(e), query=query[:80])
-            friendly = (
-                "The model is temporarily overloaded. Please try again in a moment."
-                if "overload" in str(e).lower() or "503" in str(e) or "UNAVAILABLE" in str(e)
-                else f"Generation failed: {str(e)[:200]}"
-            )
-            yield f"data: [ERROR] {friendly}\n\n"
+            yield f"data: [ERROR] {_friendly_error(e)}\n\n"
             yield "data: [DONE]\n\n"
             return
 
-        # Sources with page attribution included in final SSE frame
         sources = [_build_source(i + 1, c) for i, c in enumerate(retrieval_result.chunks)]
         yield f"data: [SOURCES] {json.dumps(sources)}\n\n"
         yield "data: [DONE]\n\n"
@@ -245,10 +280,17 @@ class ConversationalRAGChain:
         messages = CONDENSE_QUESTION_PROMPT.format_messages(
             chat_history=history_text, question=question,
         )
-        langchain_llm = self._llm.get_langchain_llm()
-        response      = await langchain_llm.ainvoke(messages)
-        condensed     = response.content if hasattr(response, "content") else str(response)
-        return condensed.strip()
+        prompt = _messages_to_prompt(messages)
+        try:
+            # Routed through the fallback chain, same as run().
+            response = await self._llm.generate(prompt)
+            return response.strip()
+        except Exception as e:
+            # If EVERY tier in the fallback chain fails just for this
+            # condense step, degrade gracefully: answer the raw question
+            # instead of failing the whole conversational turn outright.
+            logger.warning("condense_failed_using_raw_question", error=str(e)[:150])
+            return question
 
 
 # ─── Singletons ───────────────────────────────────────────────────────────────

@@ -76,11 +76,17 @@ class GeminiEmbedder(BaseEmbedder):
         Embed one text chunk with automatic retry on transient errors.
         Uses time.sleep (not asyncio.sleep) because this runs inside
         asyncio.to_thread — it's a sync method in a thread pool.
+
+        Retries on 429 (rate limit) and ANY 5xx status code (500-599) —
+        not a fixed list. Google's API can return 500, 502, 503, or 504
+        for the same underlying "transient server-side problem, try
+        again" situation, and hardcoding specific codes means missing
+        ones we haven't personally hit yet (as happened with 502 here).
         """
         import time
 
         last_err: Exception | None = None
-        for attempt in range(3):                          # up to 3 attempts
+        for attempt in range(4):                          # up to 4 attempts
             try:
                 response = self._client.post(
                     self._URL,
@@ -95,13 +101,14 @@ class GeminiEmbedder(BaseEmbedder):
                 return response.json()["embedding"]["values"]
             except Exception as e:
                 import httpx as _httpx
-                # Retry on 429 (rate limit), 500, 503 (transient server errors)
-                if isinstance(e, _httpx.HTTPStatusError) and                         e.response.status_code in (429, 500, 503) and                         attempt < 2:
-                    wait = 2 ** attempt          # 1s, then 2s
+                status = e.response.status_code if isinstance(e, _httpx.HTTPStatusError) else None
+                is_transient = status == 429 or (status is not None and 500 <= status < 600)
+                if is_transient and attempt < 3:
+                    wait = 2 ** attempt          # 1s, 2s, 4s
                     logger.warning(
                         "embedding_retry",
                         attempt=attempt + 1,
-                        status=e.response.status_code,
+                        status=status,
                         wait_seconds=wait,
                     )
                     time.sleep(wait)
