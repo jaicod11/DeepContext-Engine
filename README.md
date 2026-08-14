@@ -258,7 +258,7 @@ docker run -d -p 6379:6379 --name deepcontext-redis redis:7-alpine
 ### 4. Start the backend
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 You should see:
@@ -391,6 +391,15 @@ The bi-encoder embeds query and chunk **independently** — fast but imprecise. 
 ---
 
 ## 🐳 Deployment
+
+> **Deploying to Render / Vercel?** See **[DEPLOYMENT.md](DEPLOYMENT.md)** first.
+> Three things will break a free-tier deploy if you miss them:
+> - **SQLite is ephemeral** on free tiers — every user account is destroyed on
+>   restart. Set `DATABASE_URL` to a managed Postgres.
+> - **`SECRET_KEY` must be set explicitly**, or every restart logs all users out.
+>   The app now refuses to boot in production without it.
+> - **512MB instances need `RERANKER_ENABLED=False` *and* the reranker packages
+>   left uninstalled** — the flag alone doesn't keep `torch` out of memory.
 
 ### Docker Compose (recommended)
 

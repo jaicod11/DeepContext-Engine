@@ -286,6 +286,23 @@ class Settings(BaseSettings):
     def _production_guards(self) -> "Settings":
         """Enforce stricter rules when running in production."""
         if self.environment == Environment.PRODUCTION:
+            # secret_key falls back to a default_factory that mints a NEW random
+            # value on every process start. In production that means every JWT
+            # issued before a restart or redeploy silently fails validation, and
+            # users are bounced to the login screen with an opaque 401 that looks
+            # like a bug in auth rather than missing config. model_fields_set
+            # contains only fields supplied explicitly (env var or .env), so its
+            # absence means the random fallback is in play.
+            if "secret_key" not in self.model_fields_set:
+                raise ValueError(
+                    "SECRET_KEY is not set, but ENVIRONMENT=production.\n"
+                    "The fallback generates a new random key on every start, which "
+                    "invalidates every existing login token on each restart/redeploy.\n"
+                    "Set SECRET_KEY to a stable secret in the environment, e.g.:\n"
+                    "    SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')\n"
+                    "Store it in your host's secret manager (Render: Environment tab) "
+                    "and keep it identical across deploys."
+                )
             if self.debug:
                 raise ValueError("debug must be False in production.")
             if self.reload:

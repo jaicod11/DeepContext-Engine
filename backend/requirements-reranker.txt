@@ -1,0 +1,14 @@
+# ──────────────────────────────────────────────────────────────
+# requirements-reranker.txt — OPTIONAL cross-encoder reranking.
+#
+#     pip install -r requirements.txt -r requirements-reranker.txt
+#
+# Only install these on an instance with real memory headroom (>=2GB).
+# They add ~450MB to the environment, and because sentence-transformers
+# depends on `transformers`, installing them causes torch to be imported at
+# STARTUP via langchain_core — even with RERANKER_ENABLED=False. On a 512MB
+# instance that is an OOM kill. See DEPLOYMENT.md.
+# ──────────────────────────────────────────────────────────────
+
+sentence-transformers==3.0.1   # cross-encoder/ms-marco-*
+torch==2.3.0                   # CPU build; swap for a cu121 build on GPU hosts

@@ -29,18 +29,49 @@ class Base(DeclarativeBase):
 
 _settings = get_settings()
 
-# check_same_thread=False is required for SQLite under async usage.
-_connect_args = (
-    {"check_same_thread": False}
-    if _settings.database_url.startswith("sqlite")
-    else {}
-)
+
+def _normalise_db_url(url: str) -> str:
+    """
+    Managed Postgres providers hand out URLs the async engine can't use as-is:
+
+        Render   postgresql://...  -> selects the *sync* psycopg2 driver
+        Heroku   postgres://...    -> not a dialect SQLAlchemy recognises
+
+    Both crash at startup (ModuleNotFoundError: psycopg2 / NoSuchModuleError:
+    postgres). Rewriting them onto the async driver we actually ship means
+    DATABASE_URL can be pasted straight from the provider's dashboard.
+
+    SQLite URLs pass through untouched, so local dev is unaffected.
+    """
+    for prefix in ("postgresql+asyncpg://", "sqlite"):
+        if url.startswith(prefix):
+            return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+DATABASE_URL = _normalise_db_url(_settings.database_url)
+_is_sqlite = DATABASE_URL.startswith("sqlite")
+
+# check_same_thread=False is required for SQLite under async usage, and is
+# NOT a valid asyncpg connect argument — so it must stay SQLite-only.
+_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+
+# Managed Postgres drops idle connections (Render and Supabase poolers do this
+# aggressively). Without pre-ping the pool eventually hands out a dead socket
+# and the first request after an idle period fails. Irrelevant for a local
+# SQLite file, so it's applied only where it matters.
+_engine_kwargs = {} if _is_sqlite else {"pool_pre_ping": True}
 
 engine = create_async_engine(
-    _settings.database_url,
+    DATABASE_URL,
     echo=False,
     future=True,
     connect_args=_connect_args,
+    **_engine_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -71,4 +102,4 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("database_initialised", backend=_settings.database_url.split("://")[0])
+    logger.info("database_initialised", backend=DATABASE_URL.split("://")[0])

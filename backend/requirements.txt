@@ -1,75 +1,91 @@
 # ──────────────────────────────────────────────────────────────
-# requirements.txt
-# Pin all versions for reproducible production builds.
-# Run: pip install -r requirements.txt --break-system-packages
+# requirements.txt — RUNTIME dependencies only.
+# Pinned to the versions this app is verified working against.
+#
+#     pip install -r requirements.txt
+#
+# Dev/test tooling lives in requirements-dev.txt and is intentionally
+# NOT installed in production images.
+#
+# Deployment notes (memory limits, DATABASE_URL, reranker): DEPLOYMENT.md
 # ──────────────────────────────────────────────────────────────
 
-# Web framework
+# ── Web framework ─────────────────────────────────────────────
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
-python-multipart==0.0.9       # file uploads
+python-multipart==0.0.9        # required by FastAPI for UploadFile / form parsing
 
-# Config & validation
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
+# ── Config & validation ───────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.14.2
 python-dotenv==1.0.1
+email-validator==2.3.0         # required by pydantic EmailStr (user schemas)
 
-# LangChain core + integrations
-langchain>=0.2.0
-langchain-core>=0.2.0
-langchain-community>=0.2.0
-langchain-google-genai>=1.0.0  # Gemini LLM + embeddings
-langchain-pinecone>=0.2.3      # Pinecone vector store
+# ── Database ──────────────────────────────────────────────────
+# SQLAlchemy's async engine needs greenlet; each URL scheme needs its own
+# driver. Both drivers are listed so the SAME image runs local SQLite and
+# managed Postgres with only DATABASE_URL changing.
+SQLAlchemy==2.0.51
+greenlet==3.5.4
+aiosqlite==0.22.1              # sqlite+aiosqlite://   (local development)
+asyncpg==0.31.0                # postgresql+asyncpg:// (production)
 
-# Pinecone client
-pinecone-client>=4.0.0
+# ── Auth ──────────────────────────────────────────────────────
+# bcrypt is used DIRECTLY, not through passlib — passlib 1.7.4 probes
+# bcrypt.__about__.__version__, removed in bcrypt 4.1+. See app/core/auth.py.
+bcrypt==5.0.0
+python-jose[cryptography]==3.3.0
 
-# LLM providers
-google-genai                   # Gemini SDK (new, replaces google-generativeai)
-ollama                          # Ollama Python client
+# ── LangChain (only the sub-packages actually imported) ───────
+langchain-core==0.3.86
+langchain-community==0.3.31
+langchain-google-genai==2.1.12
+langchain-pinecone==0.2.11
+langchain-text-splitters==0.3.11
 
-# Reranker
-sentence-transformers==3.0.1   # cross-encoder/ms-marco-*
-torch==2.3.0                   # CPU build; swap for cu121 on GPU servers
+# ── Vector store ──────────────────────────────────────────────
+pinecone==7.3.0                # the `pinecone-client` distribution is a legacy shim
 
-# Embeddings
-numpy==1.26.4
+# ── LLM providers ─────────────────────────────────────────────
+google-genai==1.2.0            # google.genai — Gemini SDK
+ollama==0.6.2
 
-# Document loaders
-pypdf==4.2.0                   # PDF parsing
-python-docx==1.1.0
-python-pptx==1.0.2          # PPTX extraction
-openpyxl==3.1.2             # XLSX extraction
-unstructured==0.14.5           # General-purpose loader
+# ── Document loaders ──────────────────────────────────────────
+pypdf==4.2.0                   # PDF
+python-docx==1.1.0             # DOCX
+python-pptx==1.0.2             # PPTX
+openpyxl==3.1.2                # XLSX
 
-# Text splitting
-langchain-text-splitters        # RecursiveCharacterTextSplitter
-tiktoken==0.7.0                 # token-aware chunking
-
-# Caching & rate limiting
+# ── Cache / rate limiting ─────────────────────────────────────
 redis==5.0.4
-hiredis==2.3.2                 # faster Redis protocol parser
 
-# Object storage
-boto3==1.34.99                 # AWS S3
-google-cloud-storage==2.17.0   # GCP GCS
-
-# Observability
+# ── Observability ─────────────────────────────────────────────
 structlog==24.1.0
 prometheus-fastapi-instrumentator==6.1.0
-sentry-sdk[fastapi]==2.3.1
 
-# HTTP client (used by embeddings REST calls + internal calls)
+# ── HTTP client ───────────────────────────────────────────────
 httpx==0.27.0
 
-# Utilities
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+# ── Utilities ─────────────────────────────────────────────────
 aiofiles==23.2.1
 
-# Dev / testing (not installed in production Docker image)
-pytest==8.2.0
-pytest-asyncio==0.23.6
-coverage==7.5.0
-ruff==0.4.4
-mypy==1.10.0
+# ── Reranker — DELIBERATELY NOT INSTALLED HERE ────────────────
+# sentence-transformers + torch live in requirements-reranker.txt.
+#
+# They are excluded by default because installing them makes torch load at
+# STARTUP even when RERANKER_ENABLED=False: sentence-transformers pulls in
+# `transformers`, and langchain_core.language_models.base imports it during
+# the normal app import chain (main -> query route -> rag_chain ->
+# prompt_templates -> langchain_core). Verified with an import tracer.
+#
+# So on a 512MB instance the flag alone is NOT enough — the packages must be
+# absent too. Installing them adds ~450MB to the environment (1.1G vs 659M
+# measured) and enough resident memory to get OOM-killed on free tiers.
+#
+# To enable reranking on an instance with headroom (>=2GB):
+#     pip install -r requirements.txt -r requirements-reranker.txt
+#
+# With them absent and RERANKER_ENABLED left at its default of True, queries
+# fail with a clear RuntimeError from reranker_service._load_model() telling
+# you to install sentence-transformers — set RERANKER_ENABLED=False to avoid
+# it. See DEPLOYMENT.md.
