@@ -54,6 +54,20 @@ export const fetchHealth = async () => {
 };
 
 // ─────────────────────────────────────────────
+// Account
+// ─────────────────────────────────────────────
+
+/**
+ * Update the signed-in user's profile. Only full_name is editable — the
+ * backend takes the user from the JWT and ignores any id/email in the body.
+ * Returns the updated UserResponse.
+ */
+export const updateProfile = async ({ fullName }) => {
+  const { data } = await client.patch("/auth/me", { full_name: fullName });
+  return data;
+};
+
+// ─────────────────────────────────────────────
 // Documents
 // ─────────────────────────────────────────────
 

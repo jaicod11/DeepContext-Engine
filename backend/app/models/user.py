@@ -69,6 +69,18 @@ class UserLoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=72)
 
 
+class UserUpdateRequest(BaseModel):
+    """
+    PATCH /auth/me body. Only full_name is editable — email is the login
+    identity and password changes are deliberately out of scope.
+
+    full_name is Optional so it can be explicitly cleared with null, but the
+    field is required in the payload: a PATCH with no keys at all is a no-op
+    the route rejects rather than silently accepting.
+    """
+    full_name: str | None = Field(..., max_length=255)
+
+
 class UserResponse(BaseModel):
     id: str
     email: EmailStr

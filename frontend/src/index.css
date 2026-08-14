@@ -34,6 +34,37 @@
   --text-secondary: #a0a0a0;
   --text-muted: #6b6b6b;
 
+  /* Elevated surfaces — popovers, tooltips, dropdown menus */
+  --bg-elevated: #1e1e1e;
+
+  /* Semantic status colours.
+     Everything that used to be a hardcoded #ef4444 / #22c55e in a component
+     or a rule below now points at these, so a theme swap reaches them. */
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.1);
+  --danger-border: rgba(239, 68, 68, 0.3);
+  --success: #22c55e;
+  --warning: #f59e0b;
+
+  /* Translucent primary wash (chip hovers, tints) */
+  --primary-soft: rgba(34, 197, 94, 0.2);
+
+  /* Always-white knob on a filled toggle — intentionally theme-independent */
+  --toggle-thumb: #ffffff;
+
+  /* Elevation + scrims */
+  --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.7);
+
+  /* Aliases: several components reference these names. They were never
+     defined, so those styles silently fell back to inherited values.
+     Defining them as aliases fixes the components without touching them. */
+  --accent: var(--primary);
+  --text-tertiary: var(--text-muted);
+  --text-error: var(--danger);
+  --text-success: var(--success);
+
   /* Sidebar */
   --sidebar-width: 64px;
 
@@ -44,6 +75,67 @@
 
   /* Font */
   --font-body: 'Space Grotesk', system-ui, sans-serif;
+
+  /* Tells the browser to render native controls/scrollbars dark */
+  color-scheme: dark;
+}
+
+/* ── Light theme ───────────────────────────────────────────────────────────
+   Overrides the SAME tokens as :root — no parallel variable names. Every
+   component inherits the swap for free, including the green→orange accent.
+
+   The accent is orange-700 (#c2410c) rather than a brighter orange because
+   it doubles as text on white: #ea580c only reaches 3.6:1 there, below the
+   4.5:1 needed for body text, while #c2410c reaches 5.05:1 and still gives
+   5.05:1 for white text sitting on top of it as a fill.
+   ────────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  /* Backgrounds */
+  --bg-base: #ffffff;
+  --bg-surface: #f7f7f8;
+  --bg-surface-2: #ededf0;
+  --bg-input: #f2f2f4;
+  --bg-muted: #e4e4e7;
+  --bg-elevated: #ffffff;
+
+  /* Border — dark enough to actually be visible on white surfaces */
+  --border: #d6d6dc;
+
+  /* Primary (orange) — orange-800.
+     #c2410c clears 4.5:1 on plain white, but the accent is also used as text
+     ON its own tints (.docs-page__tab.active on --primary-dim, .doc-card__qbadge
+     and .insight-card__generate-btn on --secondary), where it fell to 4.27–4.46.
+     Measured in-browser. orange-800 gives 7.3:1 on white and 6.3:1 on the
+     tints, and still 7.3:1 for white text sitting on it as a fill. */
+  --primary: #9a3412;
+  --primary-fg: #ffffff;
+  --primary-dim: #fdebdc;
+  --primary-hover: #7c2d12;
+  --primary-soft: rgba(154, 52, 18, 0.18);
+
+  /* Secondary */
+  --secondary: #fde5d3;
+  --secondary-fg: #7c2d12;
+
+  /* Text — 16:1 / 7.5:1 / 4.9:1 on white */
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #6b6b75;
+
+  /* Status */
+  --danger: #dc2626;
+  --danger-bg: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.3);
+  --success: #15803d;
+  --warning: #b45309;
+
+  /* Shadows are far subtler on light backgrounds — the dark theme's
+     0.5 alpha reads as a dirty smudge here. */
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.14);
+  --overlay: rgba(0, 0, 0, 0.45);
+
+  color-scheme: light;
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────────── */
@@ -160,18 +252,24 @@ body {
   color: var(--primary);
 }
 
+/* Sidebar tooltips float over page content by design, so they must read as a
+   distinct raised layer — an opaque background plus a shadow. Without the
+   shadow the label visually merges with whatever text sits behind it (most
+   noticeably the "Documents" page title, which lines up with this nav item)
+   and both strings appear stacked on top of each other. */
 .icon-sidebar__nav-btn .tooltip {
   position: absolute;
   left: calc(100% + 10px);
   top: 50%;
   transform: translateY(-50%);
-  background: var(--bg-surface-2);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 11px;
   font-weight: 500;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
@@ -644,7 +742,7 @@ body {
 }
 
 .status-dot.error {
-  background: #ef4444;
+  background: var(--danger);
 }
 
 .status-dot.idle {
@@ -664,7 +762,7 @@ body {
   padding: 12px 16px;
   z-index: 9999;
   max-width: 320px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-md);
 }
 
 /* Citation tag */
@@ -724,6 +822,30 @@ body {
   flex-shrink: 0;
 }
 
+/* Left cluster of the viewer topbar: back button, divider, filename pill,
+   chunk count. These are flex siblings so they can never overlap; min-width:0
+   lets the filename truncate instead of pushing the actions off the edge. */
+.doc-viewer__topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-viewer__back-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.doc-viewer__topbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
 .doc-viewer__file-pill {
   display: flex;
   align-items: center;
@@ -731,23 +853,31 @@ body {
   background: var(--bg-input);
   padding: 6px 12px;
   border-radius: var(--radius-md);
+  min-width: 0;
 }
 
 .doc-viewer__file-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
+  /* Long filenames truncate rather than overrunning the actions cluster */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .doc-viewer__page-count {
   font-size: 11px;
   color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .doc-viewer__actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .doc-viewer__action-btn {
@@ -1844,6 +1974,36 @@ body {
   color: var(--text-primary);
 }
 
+/* Optional leading icon inside a row label (used on the Profile page) */
+.settings-row__icon {
+  color: var(--text-muted);
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+/* ── Profile page ──────────────────────────────────────────────────────── */
+
+/* Read-only field values (email, member since) — same size as an input's
+   text so rows line up whether the value is editable or not. */
+.profile-value {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.profile-name-control {
+  gap: 8px;
+}
+
+.profile-save-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.profile-save-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .settings-row__desc {
   font-size: 11px;
   color: var(--text-muted);
@@ -1886,6 +2046,43 @@ body {
 }
 
 /* Toggle switch */
+/* Segmented dark/light picker — same surface + border language as
+   .settings-input, so it sits naturally in a settings row. */
+.theme-picker {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.theme-picker__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.theme-picker__opt:hover {
+  color: var(--text-primary);
+}
+
+.theme-picker__opt.active {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
 .settings-toggle {
   width: 38px;
   height: 22px;
@@ -1906,7 +2103,7 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--toggle-thumb);
   position: absolute;
   top: 3px;
   left: 3px;
@@ -1937,7 +2134,7 @@ body {
 }
 
 .settings-health__dot.error {
-  background: #ef4444;
+  background: var(--danger);
 }
 
 .settings-health__dot.loading {
@@ -1950,19 +2147,19 @@ body {
   align-items: center;
   gap: 6px;
   background: transparent;
-  color: #ef4444;
+  color: var(--danger);
   font-family: var(--font-body);
   font-size: 12px;
   font-weight: 500;
   padding: 7px 14px;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid var(--danger-border);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--danger-bg);
 }
 
 /* Stat row (compact, used in settings Data section) */
@@ -2090,7 +2287,7 @@ body {
 
 .compare-chip__remove:hover {
   opacity: 1;
-  background: rgba(34, 197, 94, 0.2);
+  background: var(--primary-soft);
 }
 
 .compare-page__body {
@@ -2228,7 +2425,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   z-index: 50;
 }
 
@@ -2327,7 +2524,7 @@ body {
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   z-index: 9998;
   overflow: hidden;
   font-family: var(--font-body);
@@ -2425,7 +2622,7 @@ body {
 
 .upload-widget__item-error {
   font-size: 10px;
-  color: #ef4444;
+  color: var(--danger);
 }
 
 .upload-widget__progress-track {
@@ -2552,12 +2749,12 @@ body {
 }
 
 .login-error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: 12px;
-  color: #ef4444;
+  color: var(--danger);
   line-height: 1.4;
 }
 
@@ -2622,7 +2819,7 @@ body {
   background: var(--bg-surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   z-index: 70;
   overflow: hidden;
 }
@@ -2668,5 +2865,12 @@ body {
 
 .account-menu__item:hover {
   background: var(--bg-surface);
-  color: #ef4444;
+  color: var(--text-primary);
+}
+
+/* Destructive entries (Sign out) go red on hover. This used to be on the
+   base .account-menu__item:hover, which was fine while Sign out was the only
+   item — with Profile added, every entry turned red. */
+.account-menu__item--danger:hover {
+  color: var(--danger);
 }

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
     Zap, LayoutDashboard, FileText, MessageSquare,
-    Sparkles, Settings, User, Upload, LogOut,
+    Sparkles, Settings, User, Upload, LogOut, UserCircle,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -96,6 +96,13 @@ export default function IconSidebar() {
                                 </div>
                                 <button
                                     className="account-menu__item"
+                                    onClick={() => { setMenuOpen(false); navigate("/profile"); }}
+                                >
+                                    <UserCircle size={13} strokeWidth={2} />
+                                    Profile
+                                </button>
+                                <button
+                                    className="account-menu__item account-menu__item--danger"
                                     onClick={() => { setMenuOpen(false); logout(); }}
                                 >
                                     <LogOut size={13} strokeWidth={2} />

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
+import { useThemeToken } from "@/hooks/useThemeToken";
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -175,6 +176,12 @@ export default function Dashboard() {
     // Real chart data derived from session timestamps
     const chartData = useMemo(() => buildChartData(chatSessions), [chatSessions]);
     const chartMax = Math.max(...chartData.map((d) => d.questions), 5);
+
+    // Recharts needs concrete colour strings for gradient stops and dot
+    // fills, so the accent is resolved from the CSS variable rather than
+    // hardcoded. Re-resolves on theme change, which is what makes the chart
+    // switch from green to orange.
+    const [accent] = useThemeToken("--primary");
     const hasActivity = chartData.some((d) => d.questions > 0);
 
     const handleUpload = useCallback(() => { navigate("/documents"); }, [navigate]);
@@ -245,8 +252,8 @@ export default function Dashboard() {
                                 >
                                     <defs>
                                         <linearGradient id="activityGradient" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                                            <stop offset="5%" stopColor={accent} stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor={accent} stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid
@@ -272,11 +279,11 @@ export default function Dashboard() {
                                     <Area
                                         type="monotone"
                                         dataKey="questions"
-                                        stroke="#22c55e"
+                                        stroke={accent}
                                         strokeWidth={2}
                                         fill="url(#activityGradient)"
                                         dot={false}
-                                        activeDot={{ r: 4, fill: "#22c55e", strokeWidth: 0 }}
+                                        activeDot={{ r: 4, fill: accent, strokeWidth: 0 }}
                                     />
                                 </AreaChart>
                             </ResponsiveContainer>

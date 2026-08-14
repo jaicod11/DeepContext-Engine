@@ -163,7 +163,7 @@ export default function MultiDocChatPage() {
                                             {msg.isStreaming && !msg.content ? (
                                                 <span className="streaming-dots"><span>·</span><span>·</span><span>·</span></span>
                                             ) : msg.error ? (
-                                                <span style={{ color: "#ef4444" }}>{msg.error}</span>
+                                                <span style={{ color: "var(--danger)" }}>{msg.error}</span>
                                             ) : (
                                                 stripSourceTags(msg.content)
                                             )}

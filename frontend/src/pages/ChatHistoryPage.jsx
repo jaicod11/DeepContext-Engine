@@ -88,7 +88,7 @@ function TranscriptBubble({ msg }) {
             </div>
             <div className="chat-msg-ai__body">
                 <div className="chat-msg-ai__bubble">
-                    {msg.error ? <span style={{ color: "#ef4444" }}>{msg.error}</span> : msg.content}
+                    {msg.error ? <span style={{ color: "var(--danger)" }}>{msg.error}</span> : msg.content}
                 </div>
                 {msg.sources?.length > 0 && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>

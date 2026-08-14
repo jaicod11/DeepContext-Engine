@@ -17,7 +17,7 @@ import { useAppStore } from "@/stores/appStore";
 
 function StatusIcon({ status }) {
     if (status === "complete") return <CheckCircle2 size={14} strokeWidth={2} color="var(--primary)" />;
-    if (status === "error") return <XCircle size={14} strokeWidth={2} color="#ef4444" />;
+    if (status === "error") return <XCircle size={14} strokeWidth={2} color="var(--danger)" />;
     return <Loader2 size={14} strokeWidth={2} className="spin" color="var(--text-muted)" />;
 }
 

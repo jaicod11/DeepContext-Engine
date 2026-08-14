@@ -2,7 +2,13 @@
  * SettingsPage.jsx
  * ─────────────────────────────────────────────────────────────────────────
  * Wires up the `settings` slice that already exists in appStore (topK,
- * topN, namespace, streamEnabled) — previously unused by any UI.
+ * topN, streamEnabled) — previously unused by any UI.
+ *
+ * NOTE: settings.namespace is deliberately NOT exposed here. Since auth
+ * landed, the backend derives the Pinecone namespace from the authenticated
+ * user's JWT and ignores any namespace in the request body, so the input was
+ * a control that did nothing. The store slice itself is left alone —
+ * DocumentChatPage and MultiDocChatPage still write metadataFilter through it.
  *
  * Also surfaces real backend health (fetchHealth, already in store) and
  * gives real, working controls to clear locally-cached data
@@ -11,9 +17,10 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2, Moon, Sun } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
+import { useThemeStore } from "@/stores/themeStore";
 
 function Toggle({ on, onChange }) {
     return (
@@ -38,15 +45,16 @@ export default function SettingsPage() {
 
     const { documents } = useDocuments();
 
+    const theme = useThemeStore((s) => s.theme);
+    const setTheme = useThemeStore((s) => s.setTheme);
+
     const [topK, setTopK] = useState(settings.topK ?? "");
     const [topN, setTopN] = useState(settings.topN ?? "");
-    const [namespace, setNamespace] = useState(settings.namespace ?? "");
 
     useEffect(() => { fetchHealth(); }, [fetchHealth]);
 
     const commitTopK = () => updateSettings({ topK: topK === "" ? null : Number(topK) });
     const commitTopN = () => updateSettings({ topN: topN === "" ? null : Number(topN) });
-    const commitNamespace = () => updateSettings({ namespace: namespace.trim() });
 
     const sessionCount = Object.keys(chatSessions ?? {}).length;
     const insightCount = Object.keys(docInsights ?? {}).length;
@@ -70,6 +78,49 @@ export default function SettingsPage() {
             </div>
 
             <div className="settings-page__body">
+
+                {/* Appearance */}
+                <div className="settings-section">
+                    <div className="settings-section__header">
+                        <div className="settings-section__title">Appearance</div>
+                        <div className="settings-section__desc">
+                            How DeepContext looks. Your choice is remembered on this device.
+                        </div>
+                    </div>
+
+                    <div className="settings-row">
+                        <div className="settings-row__info">
+                            <div className="settings-row__label">Theme</div>
+                            <div className="settings-row__desc">
+                                Dark uses a black canvas with a green accent; light uses white with orange.
+                            </div>
+                        </div>
+                        <div className="settings-row__control">
+                            <div className="theme-picker" role="radiogroup" aria-label="Theme">
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={theme === "dark"}
+                                    className={`theme-picker__opt${theme === "dark" ? " active" : ""}`}
+                                    onClick={() => setTheme("dark")}
+                                >
+                                    <Moon size={13} strokeWidth={2} />
+                                    Dark
+                                </button>
+                                <button
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={theme === "light"}
+                                    className={`theme-picker__opt${theme === "light" ? " active" : ""}`}
+                                    onClick={() => setTheme("light")}
+                                >
+                                    <Sun size={13} strokeWidth={2} />
+                                    Light
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 {/* Retrieval settings */}
                 <div className="settings-section">
@@ -133,25 +184,6 @@ export default function SettingsPage() {
                                 onBlur={commitTopN}
                                 min={1}
                                 max={20}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="settings-row">
-                        <div className="settings-row__info">
-                            <div className="settings-row__label">Namespace override</div>
-                            <div className="settings-row__desc">
-                                Restrict retrieval to a specific Pinecone namespace. Leave blank for "default".
-                            </div>
-                        </div>
-                        <div className="settings-row__control">
-                            <input
-                                className="settings-input settings-input--wide"
-                                type="text"
-                                placeholder="default"
-                                value={namespace}
-                                onChange={(e) => setNamespace(e.target.value)}
-                                onBlur={commitNamespace}
                             />
                         </div>
                     </div>

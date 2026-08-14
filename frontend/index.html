@@ -7,6 +7,25 @@
     <meta name="description" content="Context-aware document intelligence powered by RAG" />
     <!-- Favicon inline SVG -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      Theme is applied BEFORE first paint, synchronously in <head>, so the
+      page never renders in the wrong theme and then snaps. This must run
+      before the stylesheet paints, which rules out doing it from React.
+      Key and values are kept in sync with src/stores/themeStore.js.
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("deepcontext-theme");
+          document.documentElement.setAttribute(
+            "data-theme",
+            t === "light" ? "light" : "dark"
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

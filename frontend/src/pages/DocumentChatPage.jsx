@@ -55,7 +55,7 @@ function formatUploadedAt(ts) {
 
 /* ── DocViewer ──────────────────────────────────────────────────────────── */
 
-function DocViewer({ doc, highlightedChunk }) {
+function DocViewer({ doc, highlightedChunk, onBack }) {
     // Build "sections" from the doc's chunk previews when available,
     // otherwise show a placeholder skeleton based on chunk count
     const sections = doc._sections ?? [];
@@ -65,7 +65,19 @@ function DocViewer({ doc, highlightedChunk }) {
         <div className="doc-viewer">
             {/* Top bar */}
             <div className="doc-viewer__topbar">
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                {/* Back button is a real flex child of the topbar, not an
+                    absolutely-positioned overlay — otherwise it lands on top
+                    of the filename pill and the two texts render over each
+                    other. Layout order here IS the visual order. */}
+                <div className="doc-viewer__topbar-left">
+                    <button
+                        className="btn-ghost doc-viewer__back-btn"
+                        onClick={onBack}
+                    >
+                        <ChevronLeft size={13} strokeWidth={2} />
+                        Documents
+                    </button>
+                    <span className="doc-viewer__topbar-divider" />
                     <div className="doc-viewer__file-pill">
                         <FileText size={13} strokeWidth={2} color="var(--text-muted)" />
                         <span className="doc-viewer__file-name">{doc.filename}</span>
@@ -256,7 +268,7 @@ function ChatPanel({ doc, onHighlight }) {
                                             <span>·</span><span>·</span><span>·</span>
                                         </span>
                                     ) : msg.error ? (
-                                        <span style={{ color: "#ef4444" }}>{msg.error}</span>
+                                        <span style={{ color: "var(--danger)" }}>{msg.error}</span>
                                     ) : (
                                         stripSourceTags(msg.content)
                                     )}
@@ -442,7 +454,7 @@ function UploadModal({ onClose, onUploaded }) {
     return (
         <div
             style={{
-                position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+                position: "fixed", inset: 0, background: "var(--overlay)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 zIndex: 9999,
             }}
@@ -553,20 +565,19 @@ export default function DocumentChatPage() {
 
             {selectedDoc ? (
                 <>
-                    {/* Back button */}
-                    <div style={{ position: "absolute", top: 14, left: 80, zIndex: 20 }}>
-                        <button
-                            className="btn-ghost"
-                            style={{ padding: "4px 10px", fontSize: 11 }}
-                            onClick={() => { setSelectedDoc(null); setHighlightedChunk(null); clearChat(); navigate("/chat"); }}
-                        >
-                            <ChevronLeft size={13} strokeWidth={2} />
-                            Documents
-                        </button>
-                    </div>
-
-                    {/* Split view */}
-                    <DocViewer doc={selectedDoc} highlightedChunk={highlightedChunk} />
+                    {/* Split view — the back button now lives inside
+                        DocViewer's topbar as a layout sibling of the
+                        filename pill. */}
+                    <DocViewer
+                        doc={selectedDoc}
+                        highlightedChunk={highlightedChunk}
+                        onBack={() => {
+                            setSelectedDoc(null);
+                            setHighlightedChunk(null);
+                            clearChat();
+                            navigate("/chat");
+                        }}
+                    />
                     <ChatPanel
                         doc={selectedDoc}
                         onHighlight={setHighlightedChunk}

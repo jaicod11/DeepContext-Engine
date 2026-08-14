@@ -92,6 +92,23 @@ export const useAuthStore = create(
                 }
             },
 
+            /**
+             * PATCH /auth/me — update the display name.
+             *
+             * Writes the server's response back into `user`, so anything
+             * deriving from it (the sidebar avatar initials, the account
+             * menu header) re-renders immediately without a re-login.
+             * Throws on failure so the caller can surface the message.
+             */
+            updateProfile: async ({ fullName }) => {
+                // Imported lazily: services/api.js imports THIS module for the
+                // token, so a top-level import would be a circular dependency.
+                const { updateProfile } = await import("@/services/api");
+                const updated = await updateProfile({ fullName });
+                set((s) => ({ user: { ...s.user, ...updated } }));
+                return updated;
+            },
+
             logout: () => {
                 set({ token: null, user: null, error: null });
                 // Clear per-user cached data so the next account doesn't inherit

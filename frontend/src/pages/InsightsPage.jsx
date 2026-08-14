@@ -83,7 +83,7 @@ function DocInsightCard({ doc, cached, sessionQuestions, onGenerate }) {
             )}
 
             {error && (
-                <p className="insight-card__summary" style={{ color: "#ef4444" }}>{error}</p>
+                <p className="insight-card__summary" style={{ color: "var(--danger)" }}>{error}</p>
             )}
 
             {cached && !loading && (
