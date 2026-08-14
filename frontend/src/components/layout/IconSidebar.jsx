@@ -1,14 +1,10 @@
+import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-    Zap,
-    LayoutDashboard,
-    FileText,
-    MessageSquare,
-    Sparkles,
-    Settings,
-    User,
-    Upload,
+    Zap, LayoutDashboard, FileText, MessageSquare,
+    Sparkles, Settings, User, Upload, LogOut,
 } from "lucide-react";
+import { useAuthStore } from "@/stores/authStore";
 
 const NAV_ITEMS = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -20,6 +16,16 @@ const NAV_ITEMS = [
 
 export default function IconSidebar() {
     const navigate = useNavigate();
+    const user = useAuthStore((s) => s.user);
+    const logout = useAuthStore((s) => s.logout);
+    const [menuOpen, setMenuOpen] = useState(false);
+
+    const initials = (user?.full_name || user?.email || "?")
+        .split(" ")
+        .map((p) => p[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase();
 
     return (
         <aside className="icon-sidebar">
@@ -50,7 +56,6 @@ export default function IconSidebar() {
 
             {/* Footer */}
             <div className="icon-sidebar__footer">
-                {/* Quick upload shortcut → Documents page (real upload UI lives there) */}
                 <button
                     className="icon-sidebar__nav-btn"
                     onClick={() => navigate("/documents")}
@@ -60,9 +65,45 @@ export default function IconSidebar() {
                     <span className="tooltip">Upload</span>
                 </button>
 
-                {/* Avatar */}
-                <div className="icon-sidebar__avatar">
-                    <User size={15} strokeWidth={1.8} />
+                {/* Avatar + account menu */}
+                <div style={{ position: "relative" }}>
+                    <button
+                        className="icon-sidebar__avatar"
+                        onClick={() => setMenuOpen((v) => !v)}
+                        title={user?.email}
+                        style={{
+                            border: "none", cursor: "pointer",
+                            fontSize: 11, fontWeight: 600,
+                            color: "var(--text-secondary)",
+                        }}
+                    >
+                        {initials || <User size={15} strokeWidth={1.8} />}
+                    </button>
+
+                    {menuOpen && (
+                        <>
+                            {/* Click-away backdrop */}
+                            <div
+                                style={{ position: "fixed", inset: 0, zIndex: 60 }}
+                                onClick={() => setMenuOpen(false)}
+                            />
+                            <div className="account-menu">
+                                <div className="account-menu__header">
+                                    <div className="account-menu__name">
+                                        {user?.full_name || "Account"}
+                                    </div>
+                                    <div className="account-menu__email">{user?.email}</div>
+                                </div>
+                                <button
+                                    className="account-menu__item"
+                                    onClick={() => { setMenuOpen(false); logout(); }}
+                                >
+                                    <LogOut size={13} strokeWidth={2} />
+                                    Sign out
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </aside>

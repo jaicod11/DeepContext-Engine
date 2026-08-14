@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAppStore } from "@/stores/appStore";
+import { useAuthStore } from "@/stores/authStore";
 import IconSidebar from "@/components/layout/IconSidebar";
 import Toast from "@/components/shared/Toast";
 import UploadStatusWidget from "@/components/shared/UploadStatusWidget";
@@ -12,6 +13,7 @@ const ChatHistoryPage = lazy(() => import("@/pages/ChatHistoryPage"));
 const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const MultiDocChatPage = lazy(() => import("@/pages/MultiDocChatPage"));
+const LoginPage = lazy(() => import("@/pages/LoginPage"));
 
 function PageLoader() {
   return (
@@ -27,6 +29,19 @@ function PageLoader() {
 export default function App() {
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
+  const token = useAuthStore((s) => s.token);
+
+  // ── Auth gate ─────────────────────────────────────────────────────────
+  // No token → the ONLY thing that renders is the login screen. The
+  // sidebar and every route are unreachable, so there's no window where
+  // a protected page briefly mounts and fires unauthorised requests.
+  if (!token) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <LoginPage />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="app-shell">

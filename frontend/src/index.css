@@ -2445,3 +2445,228 @@ body {
   flex-shrink: 0;
   display: flex;
 }
+
+/* ── Login Page ────────────────────────────────────────────────────────── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.login-card__brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.login-card__logo {
+  width: 40px;
+  height: 40px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.login-card__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.login-card__subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.login-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-field__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.login-field__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  transition: border-color 0.15s;
+}
+
+.login-field__input-wrap:focus-within {
+  border-color: var(--primary);
+}
+
+.login-field__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+.login-field__input::placeholder {
+  color: var(--text-muted);
+}
+
+.login-field__hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.login-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #ef4444;
+  line-height: 1.4;
+}
+
+.login-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  margin-top: 4px;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.login-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.login-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.login-switch__btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.login-switch__btn:hover {
+  text-decoration: underline;
+}
+
+/* ── Account menu (sidebar) ────────────────────────────────────────────── */
+.account-menu {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 10px);
+  width: 200px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 70;
+  overflow: hidden;
+}
+
+.account-menu__header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-menu__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-menu__email {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 11px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.account-menu__item:hover {
+  background: var(--bg-surface);
+  color: #ef4444;
+}

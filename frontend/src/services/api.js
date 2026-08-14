@@ -1,266 +1,79 @@
 /**
  * services/api.js
- * ---------------
- * Centralised Axios client for the RAG backend.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Axios client + SSE streaming client.
  *
- * All endpoints, request/response shapes, and error normalisation live here.
- * No component should ever call fetch() or axios directly — always use this module.
+ * AUTH: every request carries `Authorization: Bearer <jwt>` pulled live
+ * from authStore. The old X-API-Key header is gone — the backend now
+ * authenticates users individually, not via one shared secret.
  *
- * Environment variables (set in .env):
- *   VITE_API_BASE_URL   — e.g. http://localhost:8000/api/v1
- *   VITE_API_KEY        — X-API-Key header value
+ * A 401 response anywhere triggers an automatic logout, so an expired
+ * token drops you cleanly to the login screen instead of leaving the UI
+ * silently broken.
  */
 
 import axios from "axios";
+import { getAuthToken, useAuthStore } from "@/stores/authStore";
 
-// ─────────────────────────────────────────────
-// Client factory
-// ─────────────────────────────────────────────
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
-const API_KEY = import.meta.env.VITE_API_KEY ?? "";
-
-const client = axios.create({
+export const client = axios.create({
   baseURL: BASE_URL,
   timeout: 90_000,          // 90s — LLM calls + retrieval can be slow
-  headers: {
-    "Content-Type": "application/json",
-    "X-API-Key": API_KEY,
-  },
+  headers: { "Content-Type": "application/json" },
 });
 
-// ── Request interceptor — inject request ID for tracing ──────────────────────
+// ── Attach JWT to every outgoing request ────────────────────────────────
 client.interceptors.request.use((config) => {
-  config.headers["X-Request-ID"] = crypto.randomUUID();
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
 
-// ── Response interceptor — normalise errors ───────────────────────────────────
+// ── Auto-logout on 401 ──────────────────────────────────────────────────
 client.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const status = error.response?.status;
-    const detail = error.response?.data?.detail ?? error.message ?? "Unknown error";
-    const reqId = error.response?.headers?.["x-request-id"] ?? null;
-
-    const normalised = {
-      status,
-      message: detail,
-      requestId: reqId,
-      isNetworkError: !error.response,
-      isAuthError: status === 401 || status === 403,
-      isRateLimit: status === 429,
-      retryAfter: error.response?.headers?.["retry-after"] ?? null,
-    };
-
-    return Promise.reject(normalised);
+  (res) => res,
+  (err) => {
+    if (err?.response?.status === 401) {
+      useAuthStore.getState().logout();
+    }
+    return Promise.reject(err);
   }
 );
 
-
 // ─────────────────────────────────────────────
-// Health
+// Health (lives outside /api/v1)
 // ─────────────────────────────────────────────
 
-/**
- * GET /health
- * @returns {{ status: string, version: string, pinecone: object }}
- */
 export const fetchHealth = async () => {
-  const { data } = await client.get("/health");
+  const baseRoot = BASE_URL.replace(/\/api\/v1$/, "");
+  const { data } = await axios.get(`${baseRoot}/health`);
   return data;
 };
-
-
-// ─────────────────────────────────────────────
-// Query — blocking (JSON response)
-// ─────────────────────────────────────────────
-
-/**
- * POST /query
- *
- * @param {object} params
- * @param {string}  params.question
- * @param {string}  [params.namespace]
- * @param {object}  [params.metadataFilter]
- * @param {number}  [params.topK]
- * @param {number}  [params.topN]
- *
- * @returns {{
- *   answer: string,
- *   sources: Array<{ index, source, score, text_preview, vector_id }>,
- *   query: string,
- *   total_candidates: number,
- *   reranked: boolean,
- *   latency_ms: number,
- *   model: string,
- * }}
- */
-export const queryRAG = async ({
-  question,
-  namespace = null,
-  metadataFilter = null,
-  topK = null,
-  topN = null,
-}) => {
-  const { data } = await client.post("/query", {
-    question,
-    namespace,
-    metadata_filter: metadataFilter,
-    top_k: topK,
-    top_n: topN,
-    stream: false,
-  });
-  return data;
-};
-
-
-// ─────────────────────────────────────────────
-// Query — streaming (SSE via native fetch)
-// ─────────────────────────────────────────────
-
-/**
- * POST /query  (stream: true)
- *
- * Uses the native fetch API — Axios does not support SSE streaming.
- * Returns an async generator that yields parsed SSE events:
- *
- *   { type: "token",   data: string }
- *   { type: "sources", data: Source[] }
- *   { type: "done" }
- *   { type: "error",   data: string }
- *
- * Usage:
- *   for await (const event of streamQuery({ question: "..." })) {
- *     if (event.type === "token") appendToken(event.data);
- *   }
- */
-export async function* streamQuery({
-  question,
-  namespace = null,
-  metadataFilter = null,
-  topK = null,
-  topN = null,
-  signal = null,   // AbortController signal for cancellation
-}) {
-  const url = `${BASE_URL}/query`;
-  const body = JSON.stringify({
-    question,
-    namespace,
-    metadata_filter: metadataFilter,
-    top_k: topK,
-    top_n: topN,
-    stream: true,
-  });
-
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": API_KEY,
-        "X-Request-ID": crypto.randomUUID(),
-      },
-      body,
-      signal,
-    });
-  } catch (err) {
-    yield { type: "error", data: err.message };
-    return;
-  }
-
-  if (!response.ok) {
-    let detail = "Stream request failed";
-    try { detail = (await response.json()).detail ?? detail; } catch (_) { }
-    yield { type: "error", data: detail };
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";          // keep incomplete last line
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6);     // strip "data: "
-
-      if (payload === "[DONE]") {
-        yield { type: "done" };
-        return;
-      }
-
-      if (payload.startsWith("[SOURCES] ")) {
-        try {
-          const sources = JSON.parse(payload.slice(10));
-          yield { type: "sources", data: sources };
-        } catch (_) { }
-        continue;
-      }
-
-      if (payload.startsWith("[ERROR] ")) {
-        yield { type: "error", data: payload.slice(8) };
-        return;
-      }
-
-      yield { type: "token", data: payload };
-    }
-  }
-}
-
-
-// ─────────────────────────────────────────────
-// Conversational query
-// ─────────────────────────────────────────────
-
-/**
- * POST /query/chat
- *
- * @param {object} params
- * @param {string}  params.question
- * @param {Array<{ role: string, content: string }>} params.history
- * @param {string}  [params.namespace]
- */
-export const queryConversational = async ({ question, history = [], namespace = null }) => {
-  const { data } = await client.post("/query/chat", {
-    question,
-    history,
-    namespace,
-  });
-  return data;
-};
-
 
 // ─────────────────────────────────────────────
 // Documents
 // ─────────────────────────────────────────────
 
 /**
- * POST /documents/upload  (multipart)
- *
- * @param {File}   file
- * @param {string} [namespace]
- * @param {Function} [onProgress]  — (percent: number) => void
- *
- * @returns {IngestResponse}
+ * List the current user's documents.
+ * THIS is what makes uploads persist across refreshes — the library
+ * lives server-side now, not just in browser state.
  */
-export const uploadDocument = async (file, namespace = null, onProgress = null) => {
+export const listDocuments = async () => {
+  const { data } = await client.get("/documents");
+  return data;   // [{ document_id, filename, chunks_total, namespace, uploaded_at }]
+};
+
+export const uploadDocument = async (file, _namespace = null, onProgress = null) => {
   const form = new FormData();
   form.append("file", file);
-  if (namespace) form.append("namespace", namespace);
+  // NOTE: namespace is no longer sent — the backend derives it from the
+  // authenticated user. Passing one would be ignored.
 
-  // Large files need a much longer timeout:
-  // text extraction + chunking + Gemini embeddings + Pinecone upsert
-  // can take 60-120s for files over 2MB.
-  const UPLOAD_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+  const UPLOAD_TIMEOUT = 5 * 60 * 1000;   // 5 minutes for large files
 
   const { data } = await client.post("/documents/upload", form, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -272,50 +85,126 @@ export const uploadDocument = async (file, namespace = null, onProgress = null) 
   return data;
 };
 
-
-/**
- * POST /documents/text
- *
- * @param {{ text: string, source?: string, namespace?: string, metadata?: object }} params
- * @returns {IngestResponse}
- */
-export const ingestText = async ({ text, source = "inline", namespace = null, metadata = null }) => {
-  const { data } = await client.post("/documents/text", {
-    text,
-    source,
-    namespace,
-    metadata,
-  });
-  return data;
+export const deleteDocument = async (documentId) => {
+  await client.delete(`/documents/${documentId}`);
 };
 
-
-/**
- * DELETE /documents/{documentId}
- *
- * @param {string} documentId
- * @param {string} [namespace]
- */
-export const deleteDocument = async (documentId, namespace = null) => {
-  await client.delete(`/documents/${documentId}`, {
-    params: namespace ? { namespace } : {},
-  });
-};
-
-
-/**
- * GET /documents/stats
- *
- * @returns {{ total_vectors, dimension, namespaces, index_fullness }}
- */
-export const fetchIndexStats = async () => {
+export const fetchStats = async () => {
   const { data } = await client.get("/documents/stats");
   return data;
 };
 
-
 // ─────────────────────────────────────────────
-// Exports
+// Query
 // ─────────────────────────────────────────────
 
-export default client;
+export const queryRAG = async ({
+  question,
+  metadataFilter = null,
+  topK = null,
+  topN = null,
+}) => {
+  const { data } = await client.post("/query", {
+    question,
+    metadata_filter: metadataFilter,
+    top_k: topK,
+    top_n: topN,
+    stream: false,
+  });
+  return data;
+};
+
+/**
+ * SSE streaming query.
+ * Uses fetch (not axios) because axios can't stream response bodies
+ * in the browser.
+ *
+ * Yields: { type: "token"|"sources"|"done"|"error", data }
+ */
+export async function* streamQuery({
+  question,
+  metadataFilter = null,
+  topK = null,
+  topN = null,
+  signal = null,
+}) {
+  const token = getAuthToken();
+
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        question,
+        metadata_filter: metadataFilter,
+        top_k: topK,
+        top_n: topN,
+        stream: true,
+      }),
+      signal,
+    });
+  } catch (err) {
+    yield { type: "error", data: err.message };
+    return;
+  }
+
+  if (res.status === 401) {
+    useAuthStore.getState().logout();
+    yield { type: "error", data: "Session expired. Please sign in again." };
+    return;
+  }
+
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const body = await res.json();
+      detail = body?.detail || detail;
+    } catch (_) { /* non-JSON error body */ }
+    yield { type: "error", data: detail };
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6);
+
+      if (payload === "[DONE]") {
+        yield { type: "done" };
+        return;
+      }
+
+      if (payload.startsWith("[SOURCES] ")) {
+        try {
+          const sources = JSON.parse(payload.slice(10));
+          yield { type: "sources", data: sources };
+        } catch (_) { /* malformed sources frame */ }
+        continue;
+      }
+
+      if (payload.startsWith("[ERROR] ")) {
+        yield { type: "error", data: payload.slice(8) };
+        continue;
+      }
+
+      yield { type: "token", data: payload };
+    }
+  }
+
+  yield { type: "done" };
+}

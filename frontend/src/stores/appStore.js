@@ -174,6 +174,11 @@ export const useAppStore = create(
         uploadQueue: [],   // { file, status, progress, error, id }[]
         indexStats: null,
 
+        // Replace the whole library wholesale — used by useDocuments()
+        // after GET /api/v1/documents, which is the server's authoritative
+        // list for the signed-in user.
+        setDocuments: (docs) => set({ documents: docs }),
+
         addDocument: (doc) =>
           set((s) => ({ documents: [doc, ...s.documents] })),
 

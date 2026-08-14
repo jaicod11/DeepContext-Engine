@@ -1,130 +1,142 @@
 /**
  * hooks/useDocuments.js
- * ----------------------
- * Document management hook — wraps the documents slice of appStore
- * and handles the async upload/delete lifecycle.
+ * ─────────────────────────────────────────────────────────────────────────
+ * Document library, now backed by the SERVER not just browser state.
  *
- * Usage:
- *   const {
- *     documents, uploadQueue, indexStats,
- *     uploadFile, deleteDoc, refreshStats,
- *   } = useDocuments();
+ * loadDocuments() hits GET /api/v1/documents and replaces the local list.
+ * Called automatically on mount, which is what makes uploaded documents
+ * reappear after a refresh or a fresh login.
  */
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useAppStore } from "@/stores/appStore";
+import { useAuthStore } from "@/stores/authStore";
 import {
+  deleteDocument as apiDelete,
+  fetchStats,
+  listDocuments,
   uploadDocument,
-  deleteDocument,
-  fetchIndexStats,
 } from "@/services/api";
 
 export function useDocuments() {
-  const documents          = useAppStore((s) => s.documents);
-  const uploadQueue        = useAppStore((s) => s.uploadQueue);
-  const indexStats         = useAppStore((s) => s.indexStats);
-  const addDocument        = useAppStore((s) => s.addDocument);
-  const removeDocument     = useAppStore((s) => s.removeDocument);
-  const addToUploadQueue   = useAppStore((s) => s.addToUploadQueue);
-  const updateUploadEntry  = useAppStore((s) => s.updateUploadEntry);
-  const clearCompleted     = useAppStore((s) => s.clearCompletedUploads);
-  const setIndexStats      = useAppStore((s) => s.setIndexStats);
-  const _addToast          = useAppStore((s) => s._addToast);
-  const settings           = useAppStore((s) => s.settings);
+  const documents = useAppStore((s) => s.documents);
+  const uploadQueue = useAppStore((s) => s.uploadQueue);
+  const indexStats = useAppStore((s) => s.indexStats);
+  const addDocument = useAppStore((s) => s.addDocument);
+  const removeDocument = useAppStore((s) => s.removeDocument);
+  const setDocuments = useAppStore((s) => s.setDocuments);
+  const setIndexStats = useAppStore((s) => s.setIndexStats);
+  const addToQueue = useAppStore((s) => s.addToUploadQueue);
+  const updateEntry = useAppStore((s) => s.updateUploadEntry);
+  const clearCompleted = useAppStore((s) => s.clearCompletedUploads);
+  const addToast = useAppStore((s) => s._addToast);
 
-  /**
-   * Upload a File object to the backend.
-   * Tracks progress in the upload queue and adds the result to documents.
-   *
-   * @param {File}   file
-   * @param {string} [namespaceOverride]
-   */
-  const uploadFile = useCallback(
-    async (file, namespaceOverride) => {
-      const ns      = namespaceOverride ?? settings.namespace ?? null;
-      const queueId = addToUploadQueue(file);
+  const token = useAuthStore((s) => s.token);
 
-      updateUploadEntry(queueId, { status: "uploading" });
-
-      try {
-        const result = await uploadDocument(
-          file,
-          ns,
-          (progress) => updateUploadEntry(queueId, { progress })
-        );
-
-        updateUploadEntry(queueId, { status: "complete", progress: 100 });
-
-        addDocument({
-          ...result,
-          uploadedAt: Date.now(),
-        });
-
-        _addToast({
-          message: `"${result.filename}" ingested — ${result.chunks_total} chunks`,
-          type:    "success",
-        });
-
-        // Refresh index stats after successful ingest
-        refreshStats();
-
-        return result;
-      } catch (err) {
-        const msg = err?.message ?? "Upload failed";
-        updateUploadEntry(queueId, { status: "error", error: msg });
-        _addToast({ message: msg, type: "error" });
+  /** Fetch the user's persistent document library from the server. */
+  const loadDocuments = useCallback(async () => {
+    if (!token) return;
+    try {
+      const records = await listDocuments();
+      setDocuments(
+        records.map((r) => ({
+          document_id: r.document_id,
+          filename: r.filename,
+          chunks_total: r.chunks_total,
+          namespace: r.namespace,
+          uploadedAt: new Date(r.uploaded_at).getTime(),
+          status: "complete",
+        }))
+      );
+    } catch (err) {
+      // Anything axios didn't raise came from our own code inside this
+      // try block — a TypeError, a bad field on `r`, a missing store
+      // action. Those are bugs, not network conditions, and reporting
+      // them as "could not load" hides them. Log and re-throw so they
+      // surface immediately.
+      if (!err?.isAxiosError) {
+        console.error("[useDocuments] loadDocuments failed with a non-HTTP error:", err);
         throw err;
       }
-    },
-    [settings.namespace, addToUploadQueue, updateUploadEntry, addDocument, _addToast]
-  );
 
-  /**
-   * Upload multiple files sequentially.
-   * @param {File[]} files
-   */
-  const uploadFiles = useCallback(
-    async (files, namespaceOverride) => {
-      for (const file of files) {
-        try {
-          await uploadFile(file, namespaceOverride);
-        } catch (_) {
-          // Individual errors already toasted; continue with remaining files
-        }
+      // Past here it's a real transport/HTTP failure. 401 is handled
+      // globally by the axios interceptor (auto-logout), so only surface
+      // anything else — including `err.response === undefined`, which is
+      // how axios reports an unreachable server or a blocked preflight.
+      if (err.response?.status !== 401) {
+        addToast?.({ message: "Could not load your documents.", type: "error" });
       }
-    },
-    [uploadFile]
-  );
-
-  /**
-   * Delete a document and all its Pinecone chunks.
-   * @param {string} documentId
-   * @param {string} [namespace]
-   */
-  const deleteDoc = useCallback(
-    async (documentId, namespace) => {
-      const ns = namespace ?? settings.namespace ?? null;
-      try {
-        await deleteDocument(documentId, ns);
-        removeDocument(documentId);
-        _addToast({ message: "Document deleted", type: "success" });
-        refreshStats();
-      } catch (err) {
-        _addToast({ message: err?.message ?? "Delete failed", type: "error" });
-      }
-    },
-    [settings.namespace, removeDocument, _addToast]
-  );
-
-  /** Fetch and cache Pinecone index stats */
-  const refreshStats = useCallback(async () => {
-    try {
-      const stats = await fetchIndexStats();
-      setIndexStats(stats);
-    } catch (_) {
-      // Non-critical — fail silently
     }
-  }, [setIndexStats]);
+  }, [token, setDocuments, addToast]);
+
+  const refreshStats = useCallback(async () => {
+    if (!token) return;
+    try {
+      const stats = await fetchStats();
+      setIndexStats(stats);
+    } catch (_) { /* non-critical */ }
+  }, [token, setIndexStats]);
+
+  /** Load library + stats whenever we have a token. */
+  useEffect(() => {
+    if (token) {
+      loadDocuments();
+      refreshStats();
+    }
+  }, [token, loadDocuments, refreshStats]);
+
+  const uploadFile = useCallback(async (file) => {
+    const entryId = addToQueue(file);
+    updateEntry(entryId, { status: "uploading", progress: 0 });
+
+    try {
+      const result = await uploadDocument(file, null, (pct) =>
+        updateEntry(entryId, { progress: pct })
+      );
+
+      updateEntry(entryId, { status: "complete", progress: 100 });
+
+      addDocument({
+        document_id: result.document_id,
+        filename: result.filename,
+        chunks_total: result.chunks_total,
+        namespace: result.namespace,
+        uploadedAt: Date.now(),
+        status: "complete",
+      });
+
+      addToast?.({ message: `${file.name} indexed successfully.`, type: "success" });
+      refreshStats();
+      return result;
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail || err?.message || "Upload failed.";
+      updateEntry(entryId, { status: "error", error: detail });
+      addToast?.({ message: `${file.name}: ${detail}`, type: "error" });
+      throw err;
+    }
+  }, [addToQueue, updateEntry, addDocument, addToast, refreshStats]);
+
+  const uploadFiles = useCallback(async (files) => {
+    for (const file of files) {
+      try {
+        await uploadFile(file);
+      } catch (_) { /* already surfaced per-file */ }
+    }
+  }, [uploadFile]);
+
+  const deleteDoc = useCallback(async (documentId) => {
+    try {
+      await apiDelete(documentId);
+      removeDocument(documentId);
+      addToast?.({ message: "Document deleted.", type: "success" });
+      refreshStats();
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail || err?.message || "Delete failed.";
+      addToast?.({ message: detail, type: "error" });
+    }
+  }, [removeDocument, addToast, refreshStats]);
 
   return {
     documents,
@@ -133,6 +145,7 @@ export function useDocuments() {
     uploadFile,
     uploadFiles,
     deleteDoc,
+    loadDocuments,
     refreshStats,
     clearCompleted,
   };
