@@ -214,6 +214,9 @@ export const useAppStore = create(
 
         chatSessions: {},   // { [documentId]: { documentId, filename, messages, updatedAt } }
 
+        // Local cache only. The server is the source of truth on load; these
+        // actions keep the UI responsive between syncs. Network writes live in
+        // hooks/useChatSessions.js.
         saveChatSession: (documentId, filename, messages) =>
           set((s) => ({
             chatSessions: {
@@ -221,6 +224,23 @@ export const useAppStore = create(
               [documentId]: { documentId, filename, messages, updatedAt: Date.now() },
             },
           })),
+
+        /** Replace the whole cache with what the server returned. */
+        setChatSessions: (sessions) => set({ chatSessions: sessions }),
+
+        removeChatSession: (documentId) =>
+          set((s) => {
+            const next = { ...s.chatSessions };
+            delete next[documentId];
+            return { chatSessions: next };
+          }),
+
+        /**
+         * Wipe the local cache. SettingsPage has always called this, but it
+         * was never defined — the optional call `clearChatSessions?.()` made
+         * "Clear chat history" a silent no-op.
+         */
+        clearChatSessions: () => set({ chatSessions: {} }),
 
 
         // ══════════════════════════════════════
@@ -233,6 +253,11 @@ export const useAppStore = create(
           set((s) => ({
             docInsights: { ...s.docInsights, [documentId]: insight },
           })),
+
+        // Same latent bug as clearChatSessions: SettingsPage called
+        // clearDocInsights?.() but nothing defined it, so "Clear cached
+        // insights" did nothing. Insights stay purely client-side.
+        clearDocInsights: () => set({ docInsights: {} }),
 
 
         // ══════════════════════════════════════

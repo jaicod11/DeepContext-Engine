@@ -10,9 +10,11 @@
  * a control that did nothing. The store slice itself is left alone —
  * DocumentChatPage and MultiDocChatPage still write metadataFilter through it.
  *
- * Also surfaces real backend health (fetchHealth, already in store) and
- * gives real, working controls to clear locally-cached data
- * (chatSessions, docInsights) — both genuinely stored client-side.
+ * Also surfaces real backend health (fetchHealth, already in store).
+ *
+ * "Clear chat history" now deletes SERVER-side sessions (chat history moved
+ * to the ChatSession table) and then clears the local cache. "Clear cached
+ * insights" remains purely client-side — insights are still browser-only.
  */
 
 import { useEffect, useState } from "react";
@@ -21,6 +23,7 @@ import { RefreshCw, Trash2, Moon, Sun } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
 import { useThemeStore } from "@/stores/themeStore";
+import { useChatSessions } from "@/hooks/useChatSessions";
 
 function Toggle({ on, onChange }) {
     return (
@@ -38,12 +41,13 @@ export default function SettingsPage() {
     const healthLoading = useAppStore((s) => s.healthLoading);
     const fetchHealth = useAppStore((s) => s.fetchHealth);
 
-    const chatSessions = useAppStore((s) => s.chatSessions);
     const docInsights = useAppStore((s) => s.docInsights);
-    const clearChatSessions = useAppStore((s) => s.clearChatSessions);
     const clearDocInsights = useAppStore((s) => s.clearDocInsights);
 
     const { documents } = useDocuments();
+    // clearAll() hits DELETE /api/v1/chat-sessions, then clears the local
+    // cache — otherwise history would reappear on the next device.
+    const { chatSessions: serverSessions, clearAll: clearChatSessionsRemote } = useChatSessions();
 
     const theme = useThemeStore((s) => s.theme);
     const setTheme = useThemeStore((s) => s.setTheme);
@@ -56,12 +60,12 @@ export default function SettingsPage() {
     const commitTopK = () => updateSettings({ topK: topK === "" ? null : Number(topK) });
     const commitTopN = () => updateSettings({ topN: topN === "" ? null : Number(topN) });
 
-    const sessionCount = Object.keys(chatSessions ?? {}).length;
+    const sessionCount = Object.keys(serverSessions ?? {}).length;
     const insightCount = Object.keys(docInsights ?? {}).length;
 
-    const handleClearHistory = () => {
-        if (confirm(`Clear all ${sessionCount} chat session(s)? This can't be undone.`)) {
-            clearChatSessions?.();
+    const handleClearHistory = async () => {
+        if (confirm(`Clear all ${sessionCount} chat session(s) from your account? This can't be undone.`)) {
+            await clearChatSessionsRemote();
         }
     };
 

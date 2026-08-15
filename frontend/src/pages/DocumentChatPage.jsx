@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
+import { putChatSession } from "@/services/api";
 
 
 /* ── Strip inline [SOURCE N] tags from answer text ──────────────────────── */
@@ -521,13 +522,45 @@ export default function DocumentChatPage() {
     const messages = useAppStore((s) => s.messages);
     const saveChatSession = useAppStore((s) => s.saveChatSession);
 
-    // Snapshot this document's conversation into chatSessions as it grows,
-    // so the Chat History page has real data to show.
+    // Snapshot this document's conversation into the local cache as it grows,
+    // so the Chat History page has data immediately.
     useEffect(() => {
         if (selectedDoc && messages.length > 0 && saveChatSession) {
             saveChatSession(selectedDoc.document_id, selectedDoc.filename, messages);
         }
     }, [messages, selectedDoc, saveChatSession]);
+
+    // Persist to the SERVER — but not on every token.
+    //
+    // `messages` changes on each streamed chunk, so a naive PUT here would be
+    // one request per token. Two guards prevent that:
+    //   1. Skip entirely while any message is still streaming. A conversation
+    //      is only written once it has settled.
+    //   2. Debounce the settled state, which coalesces the burst of updates
+    //      that lands as a stream finishes (final chunk, sources frame,
+    //      isStreaming flip) into a single request.
+    // Net effect: exactly one PUT per completed question/answer exchange.
+    const saveTimer = useRef(null);
+    useEffect(() => {
+        if (!selectedDoc || messages.length === 0) return;
+        if (messages.some((m) => m.isStreaming)) return;
+
+        clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => {
+            putChatSession(selectedDoc.document_id, {
+                filename: selectedDoc.filename,
+                messages,
+            }).catch((err) => {
+                // Non-fatal: the conversation is still in the local cache and
+                // the next completed exchange retries the whole session.
+                if (err?.response?.status !== 401) {
+                    console.error("[DocumentChatPage] failed to persist chat session:", err);
+                }
+            });
+        }, 800);
+
+        return () => clearTimeout(saveTimer.current);
+    }, [messages, selectedDoc]);
 
     // When a document is selected, clear previous chat and sync URL
     const handleSelectDoc = useCallback((doc) => {

@@ -2,8 +2,10 @@
  * ChatHistoryPage.jsx
  * ─────────────────────────────────────────────────────────────────────────
  * Lists past chat sessions, one per document, read from the real
- * `chatSessions` slice in appStore (snapshotted live as you chat in
- * DocumentChatPage — see the useEffect there).
+ * `chatSessions` slice in appStore, which is now a CACHE of server-side
+ * history: useChatSessions() loads GET /api/v1/chat-sessions on mount and
+ * replaces the cache, so history follows the account across browsers.
+ * DocumentChatPage still snapshots live as you chat.
  *
  * This data is genuinely persisted (localStorage via zustand persist),
  * not mocked. If no conversations have happened yet, this page is
@@ -14,6 +16,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileText, Search, Zap, User, BookOpen, MessageSquare } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
+import { useChatSessions } from "@/hooks/useChatSessions";
 
 function citationLabel(source) {
     if (!source) return "";
@@ -120,7 +123,9 @@ function stripSourceTags(text) {
 
 export default function ChatHistoryPage() {
     const navigate = useNavigate();
-    const chatSessions = useAppStore((s) => s.chatSessions);
+    // Server is the source of truth: the hook fetches on mount and writes the
+    // result into the appStore cache this page renders from.
+    const { chatSessions } = useChatSessions();
     const [search, setSearch] = useState("");
 
     const sessions = useMemo(() => {

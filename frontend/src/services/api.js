@@ -109,6 +109,61 @@ export const fetchStats = async () => {
 };
 
 // ─────────────────────────────────────────────
+// Chat sessions (server-side chat history)
+// ─────────────────────────────────────────────
+
+/**
+ * Server rows use snake_case and ISO timestamps; the store has always used
+ * { documentId, filename, messages, updatedAt:<ms> }. Normalising here keeps
+ * that shape as the single one the UI knows about.
+ *
+ * SQLite returns naive timestamps and Postgres tz-aware ones, so a bare
+ * value without a zone is treated as UTC — otherwise "5 minutes ago" would
+ * be wrong by the local UTC offset depending on which database is behind it.
+ */
+const toLocalSession = (row) => {
+  const raw = row.updated_at ?? row.created_at;
+  const iso = raw && !/[Z+]|\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw;
+  return {
+    documentId: row.document_id,
+    filename: row.filename,
+    messages: row.messages ?? [],
+    updatedAt: iso ? new Date(iso).getTime() : Date.now(),
+  };
+};
+
+/** GET /chat-sessions — my sessions, newest first. */
+export const listChatSessions = async () => {
+  const { data } = await client.get("/chat-sessions");
+  return data.map(toLocalSession);
+};
+
+/** GET /chat-sessions/{documentId} */
+export const fetchChatSession = async (documentId) => {
+  const { data } = await client.get(`/chat-sessions/${encodeURIComponent(documentId)}`);
+  return toLocalSession(data);
+};
+
+/** PUT /chat-sessions/{documentId} — create or replace the conversation. */
+export const putChatSession = async (documentId, { filename, messages }) => {
+  const { data } = await client.put(
+    `/chat-sessions/${encodeURIComponent(documentId)}`,
+    { filename, messages }
+  );
+  return toLocalSession(data);
+};
+
+/** DELETE /chat-sessions/{documentId} */
+export const deleteChatSession = async (documentId) => {
+  await client.delete(`/chat-sessions/${encodeURIComponent(documentId)}`);
+};
+
+/** DELETE /chat-sessions — clear all of mine. */
+export const clearChatSessions = async () => {
+  await client.delete("/chat-sessions");
+};
+
+// ─────────────────────────────────────────────
 // Query
 // ─────────────────────────────────────────────
 
