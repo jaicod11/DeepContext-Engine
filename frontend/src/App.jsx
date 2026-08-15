@@ -31,6 +31,16 @@ export default function App() {
   const toasts = useAppStore((s) => s.toasts);
   const dismissToast = useAppStore((s) => s.dismissToast);
   const token = useAuthStore((s) => s.token);
+  const hasHydrated = useAuthStore((s) => s.hasHydrated);
+
+  // ── Hydration gate ────────────────────────────────────────────────────
+  // Until persist() has read localStorage, `token` is null even for a user
+  // who IS signed in. Deciding on it here would flash the login screen on
+  // every refresh — and worse, any "log out" behaviour keyed off that state
+  // would fire against a session that was about to be restored.
+  if (!hasHydrated) {
+    return <PageLoader />;
+  }
 
   // ── Auth gate ─────────────────────────────────────────────────────────
   // No token → the ONLY thing that renders is the login screen. The

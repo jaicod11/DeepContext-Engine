@@ -7,6 +7,17 @@
  * Kept SEPARATE from appStore deliberately: logging out must be able to
  * wipe auth state without touching (or being entangled with) chat
  * sessions, documents, settings, etc.
+ *
+ * NO GETTERS IN THIS STATE OBJECT.
+ * persist()'s default merge is `{ ...currentState, ...persistedState }`.
+ * Spreading INVOKES any getter, and it does so while the store is still
+ * being constructed — at which point zustand's `get()` returns undefined.
+ * A getter like `get isAuthenticated() { return Boolean(get().token) }`
+ * therefore threw "Cannot read properties of undefined (reading 'token')"
+ * during hydration. persist swallows that into its rehydrate callback, so
+ * hydration silently aborted: hasHydrated() stayed false, the token was
+ * never restored, and every refresh bounced the user to the login screen.
+ * Derive values with a selector (see selectIsAuthenticated) instead.
  */
 
 import { create } from "zustand";
@@ -22,9 +33,11 @@ export const useAuthStore = create(
             isLoading: false,
             error: null,
 
-            get isAuthenticated() {
-                return Boolean(get().token);
-            },
+            // True once persist() has finished reading localStorage. Until
+            // then `token` is still null even for a signed-in user, so the app
+            // must not conclude anything from it. Not persisted (partialize
+            // drops it), so it always starts false on a fresh load.
+            hasHydrated: false,
 
             /** POST /auth/login */
             login: async (email, password) => {
@@ -123,9 +136,29 @@ export const useAuthStore = create(
         {
             name: "deepcontext-auth",
             partialize: (s) => ({ token: s.token, user: s.user }),
+
+            onRehydrateStorage: () => (_state, error) => {
+                if (error) {
+                    // Don't let a storage problem strand the app on a spinner —
+                    // log it and fall through to the login screen.
+                    console.error("[authStore] rehydration failed:", error);
+                }
+                // This runs *during* create(), before `useAuthStore` is bound,
+                // so defer to a microtask. It fires on both the success and the
+                // failure path, which means the gate always opens.
+                queueMicrotask(() => useAuthStore.setState({ hasHydrated: true }));
+            },
         }
     )
 );
+
+/**
+ * Derived auth flag. This replaces a `get isAuthenticated()` getter that
+ * lived inside the store and broke hydration — see the note at the top.
+ *
+ *   const signedIn = useAuthStore(selectIsAuthenticated);
+ */
+export const selectIsAuthenticated = (s) => Boolean(s.token);
 
 /** Read the token outside React (used by api.js interceptors). */
 export const getAuthToken = () => useAuthStore.getState().token;
