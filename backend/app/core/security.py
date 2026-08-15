@@ -4,7 +4,7 @@ core/security.py
 API-key authentication and per-IP / per-key rate limiting.
 
 • The API key is read from the X-API-Key request header (configurable).
-• If `settings.api_keys` is empty AND the environment is not production,
+• If `settings.api_key_list` is empty AND the environment is not production,
   authentication is **skipped** — handy for local development.
 • Rate limiting uses an in-memory sliding window (via a simple dict).
   Swap for Redis-backed limits in multi-worker / multi-pod deployments.
@@ -113,7 +113,7 @@ async def require_api_key(
 ) -> str:
     """
     FastAPI dependency that:
-      1. Skips auth if api_keys is empty AND environment != production.
+      1. Skips auth if api_key_list is empty AND environment != production.
       2. Returns 401 if the header is missing or blank.
       3. Returns 403 if the key is invalid.
       4. Enforces per-key rate limiting.
@@ -129,8 +129,11 @@ async def require_api_key(
     """
     client_id = _client_identifier(request)
 
+    # api_keys is a raw string; api_key_list is the parsed form.
+    configured_keys = settings.api_key_list
+
     # ── Dev bypass ──────────────────────────
-    if not settings.api_keys:
+    if not configured_keys:
         if settings.environment == Environment.PRODUCTION:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -150,7 +153,7 @@ async def require_api_key(
         )
 
     # ── Invalid key ──────────────────────────
-    if not _constant_time_key_check(raw_key, settings.api_keys):
+    if not _constant_time_key_check(raw_key, configured_keys):
         logger.warning(
             "auth_invalid_key",
             client=client_id,

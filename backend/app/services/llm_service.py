@@ -224,13 +224,13 @@ class OllamaLLM:
 
 def _resolve_chain_entries(settings: Settings) -> list[str]:
     """
-    Reads settings.llm_fallback_chain (populated from LLM_FALLBACK_CHAIN
-    in .env, same JSON-array convention as SPLITTER_SEPARATORS).
+    Reads settings.llm_fallback_chain_list (parsed from LLM_FALLBACK_CHAIN
+    in .env, comma-separated or a JSON array).
 
     Falls back to a single-entry chain built from the existing
     LLM_PROVIDER + model settings if the list is empty.
     """
-    entries = list(getattr(settings, "llm_fallback_chain", None) or [])
+    entries = list(settings.llm_fallback_chain_list)
     if entries:
         return entries
     provider = settings.llm_provider.value

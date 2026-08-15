@@ -144,7 +144,7 @@ ENVIRONMENT=production
 SECRET_KEY=<stable value — see above>
 DATABASE_URL=<managed Postgres URL>
 RERANKER_ENABLED=False          # required at 512MB
-ALLOWED_ORIGINS=["https://your-frontend.vercel.app"]
+ALLOWED_ORIGINS=https://your-frontend.vercel.app
 PINECONE_API_KEY=<key>
 GEMINI_API_KEY=<key>
 LOG_JSON=True                   # avoids a startup warning in production
@@ -156,12 +156,22 @@ LOG_JSON=True                   # avoids a startup warning in production
 
 ## 4. CORS
 
-`ALLOWED_ORIGINS` is a JSON array. Include the exact scheme and host of the
-deployed frontend:
+`ALLOWED_ORIGINS` is a **comma-separated** list. Include the exact scheme and
+host of the deployed frontend:
 
 ```
-ALLOWED_ORIGINS=["https://your-frontend.vercel.app"]
+ALLOWED_ORIGINS=https://your-frontend.vercel.app
+ALLOWED_ORIGINS=https://your-frontend.vercel.app,https://staging.vercel.app
 ```
+
+Do not wrap it in quotes or brackets — paste the bare value into Render's
+Environment tab. A JSON array (`["https://a.app","https://b.app"]`) is still
+accepted for existing `.env` files, but the plain form is what a hosting
+dashboard produces and is the recommended one.
+
+The same applies to `API_KEYS` and `LLM_FALLBACK_CHAIN`. These fields are
+typed as `str` in `config.py` specifically so a plain dashboard value cannot
+crash startup — see the note above `_parse_list_env`.
 
 A trailing slash is fine — `cors_origins` strips it, which matters because
 browsers send `Origin` without one. Verified live: a request from

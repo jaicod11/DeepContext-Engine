@@ -49,7 +49,7 @@ class IngestionService:
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=self._settings.chunk_size,
             chunk_overlap=self._settings.chunk_overlap,
-            separators=self._settings.splitter_separators,
+            separators=self._settings.splitter_separator_list,
         )
 
     # ─────────────────────────────────────────

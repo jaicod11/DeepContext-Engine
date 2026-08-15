@@ -9,6 +9,7 @@ object is cached at process startup and shared across the entire app.
 
 from __future__ import annotations
 
+import json
 import secrets
 from enum import Enum
 from functools import lru_cache
@@ -21,6 +22,73 @@ from pydantic import (
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# ──────────────────────────────────────────────
+# List-valued env vars
+# ──────────────────────────────────────────────
+#
+# Every multi-value setting below is declared as `str`, never `list[...]`.
+#
+# pydantic-settings treats a complex annotation (list/dict/set) as JSON and
+# runs json.loads() on the raw env var inside EnvSettingsSource — BEFORE any
+# field_validator, including mode="before" ones. So a perfectly reasonable
+# value typed into a hosting dashboard:
+#
+#     ALLOWED_ORIGINS=https://my-app.vercel.app
+#
+# never reaches validation. It fails to parse as JSON and the app dies at
+# import with:
+#
+#     SettingsError: error parsing value for field "allowed_origins"
+#                    from source "EnvSettingsSource"
+#
+# Declaring the field as `str` sidesteps the JSON decoding entirely, and the
+# value is split by the properties further down.
+
+
+def _parse_list_env(raw: str | None, *, strip: bool = True) -> list[str]:
+    """
+    Split one of the list-valued settings into its entries.
+
+    Accepts both forms so nothing has to be reformatted:
+      * comma-separated  — what you type into Render/Heroku/Fly dashboards
+      * a JSON array     — what existing .env files in this repo already use
+
+    Returns [] for blank input.
+
+    `strip=True` (the default) trims each entry and drops empties, which is
+    what you want for origins, API keys and provider:model entries — the
+    whitespace around a comma is incidental.
+
+    `strip=False` returns JSON entries verbatim. Only the text-splitter
+    separators need this: several of them ARE whitespace ("\\n\\n", " ") or
+    the empty string, and trimming would silently corrupt them — ". " would
+    become "." and the rest would vanish.
+    """
+    if not raw:
+        return []
+
+    text = raw.strip()
+
+    # Existing .env files use JSON arrays; keep reading them.
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                entries = [str(x) for x in parsed]
+                if not strip:
+                    return entries          # exact values, whitespace intact
+                return [e.strip() for e in entries if e.strip()]
+        except json.JSONDecodeError:
+            # Fall through and treat it as comma-separated — a malformed
+            # array shouldn't take the whole app down at import time.
+            pass
+
+    parts = text.split(",")
+    if not strip:
+        return parts
+    return [p.strip() for p in parts if p.strip()]
 
 
 # ──────────────────────────────────────────────
@@ -92,9 +160,14 @@ class Settings(BaseSettings):
     reload: bool          = Field(default=False, description="Uvicorn hot-reload (dev only)")
 
     # ── CORS ─────────────────────────────────
-    allowed_origins: list[AnyHttpUrl] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
-        description="React dev servers; restrict in production",
+    # Typed as a plain str, NOT list[...] — see _parse_list_env above.
+    allowed_origins: str = Field(
+        default="http://localhost:3000,http://localhost:5173",
+        description=(
+            "Comma-separated allowed origins (a JSON array also works). "
+            "React dev servers by default; restrict in production. "
+            "Read it through the cors_origins property, never directly."
+        ),
     )
 
     # ── Auth / Database ──────────────────────
@@ -118,11 +191,13 @@ class Settings(BaseSettings):
 
     # ── API Security ─────────────────────────
     api_key_header: str   = Field(default="X-API-Key")
-    api_keys: list[str]   = Field(
-        default=[],
+    api_keys: str         = Field(
+        default="",
         description=(
-            "Legacy shared-secret auth. Superseded by JWT user auth for "
-            "all user-facing routes; retained for service-to-service use."
+            "Comma-separated keys (a JSON array also works). Legacy "
+            "shared-secret auth, superseded by JWT user auth for all "
+            "user-facing routes; retained for service-to-service use. "
+            "Read it through the api_key_list property, never directly."
         ),
     )
     rate_limit_per_minute: int = Field(default=60, ge=1)
@@ -177,11 +252,24 @@ class Settings(BaseSettings):
     # ── Text Splitting ───────────────────────
     chunk_size: int               = Field(default=512,  ge=64,  le=4096)
     chunk_overlap: int            = Field(default=64,   ge=0,   le=512)
-    splitter_separators: list[str] = Field(
-        default=["\n\n", "\n", ". ", " ", ""],
-        description="LangChain RecursiveCharacterTextSplitter separators (in priority order)",
+    splitter_separators: str = Field(
+        default="",
+        description=(
+            "LangChain RecursiveCharacterTextSplitter separators, in priority "
+            "order, as a JSON array. Leave BLANK to use the built-in defaults "
+            "— they include a bare space and an empty string, which a "
+            "comma-separated list cannot represent. Read it through the "
+            "splitter_separator_list property, never directly."
+        ),
     )
-    llm_fallback_chain: list[str] = Field(default_factory=list)
+    llm_fallback_chain: str = Field(
+        default="",
+        description=(
+            "Comma-separated 'provider:model' entries (a JSON array also "
+            "works), tried in order. Read it through the "
+            "llm_fallback_chain_list property, never directly."
+        ),
+    )
 
     # ── Embedding ────────────────────────────
     embedding_provider: EmbeddingProvider = Field(default=EmbeddingProvider.GEMINI)
@@ -253,14 +341,6 @@ class Settings(BaseSettings):
     # ──────────────────────────────────────────
     # Validators
     # ──────────────────────────────────────────
-
-    @field_validator("api_keys", mode="before")
-    @classmethod
-    def _parse_api_keys(cls, v: Any) -> list[str]:
-        """Accept a comma-separated string OR a list from the env file."""
-        if isinstance(v, str):
-            return [k.strip() for k in v.split(",") if k.strip()]
-        return v
 
     @field_validator("chunk_overlap")
     @classmethod
@@ -336,10 +416,46 @@ class Settings(BaseSettings):
     def active_embedding_model(self) -> str:
         return self.embedding_model
 
+    # ── Accessors for the list-valued settings ───────────────────────────
+    # These are the ONLY supported way to read those fields; the raw
+    # attributes are undivided strings. See _parse_list_env at the top.
+
     @property
     def cors_origins(self) -> list[str]:
-        """Convert AnyHttpUrl objects to plain strings, stripping trailing slash."""
-        return [str(o).rstrip("/") for o in self.allowed_origins]
+        """
+        Allowed origins, trailing slash stripped.
+
+        The stripping matters: browsers send `Origin` without a trailing
+        slash, so a configured "https://app.vercel.app/" would never match
+        and every cross-origin request would be rejected.
+        """
+        return [o.rstrip("/") for o in _parse_list_env(self.allowed_origins)]
+
+    @property
+    def api_key_list(self) -> list[str]:
+        """Legacy shared-secret API keys."""
+        return _parse_list_env(self.api_keys)
+
+    @property
+    def llm_fallback_chain_list(self) -> list[str]:
+        """'provider:model' entries to try in order when the primary fails."""
+        return _parse_list_env(self.llm_fallback_chain)
+
+    @property
+    def splitter_separator_list(self) -> list[str]:
+        """
+        Text-splitter separators.
+
+        Blank (the normal case) yields the built-in defaults. They are
+        returned from here rather than the field default because two of
+        them — a bare space and an empty string — cannot survive a
+        comma-separated round trip: stripping turns " " into "" and the
+        empty final separator gets dropped. Losing the empty separator
+        silently changes chunking, since it is what lets
+        RecursiveCharacterTextSplitter split inside an over-long word.
+        """
+        parsed = _parse_list_env(self.splitter_separators, strip=False)
+        return parsed or ["\n\n", "\n", ". ", " ", ""]
 
     def redacted_dict(self) -> dict[str, Any]:
         """
