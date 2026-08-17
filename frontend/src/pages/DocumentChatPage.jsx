@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "@/stores/appStore";
 import { useDocuments } from "@/hooks/useDocuments";
-import { putChatSession } from "@/services/api";
+import { fetchChatSession, putChatSession } from "@/services/api";
 
 
 /* ── Strip inline [SOURCE N] tags from answer text ──────────────────────── */
@@ -519,7 +519,19 @@ export default function DocumentChatPage() {
 
     const { documents, refreshStats } = useDocuments();
     const clearChat = useAppStore((s) => s.clearChat);
+    const loadMessages = useAppStore((s) => s.loadMessages);
     const messages = useAppStore((s) => s.messages);
+
+    // True while a document's saved session is being fetched. Saving is
+    // suppressed during this window so an empty transcript can never be
+    // written over the stored one.
+    const [sessionLoading, setSessionLoading] = useState(false);
+    // Set when messages change because we just restored them from the
+    // server, so that restore doesn't echo straight back as a PUT.
+    const skipNextSaveRef = useRef(false);
+    // Monotonic counter so a slow fetch for a previously-opened document
+    // cannot overwrite the transcript of the one now on screen.
+    const loadSeqRef = useRef(0);
     const saveChatSession = useAppStore((s) => s.saveChatSession);
 
     // Snapshot this document's conversation into the local cache as it grows,
@@ -545,6 +557,17 @@ export default function DocumentChatPage() {
         if (!selectedDoc || messages.length === 0) return;
         if (messages.some((m) => m.isStreaming)) return;
 
+        // Never write while a saved session is still being fetched — that is
+        // exactly the window in which an empty transcript would clobber it.
+        if (sessionLoading) return;
+
+        // The transcript changed because we just restored it, not because the
+        // user said anything. Writing it back would be a pointless round trip.
+        if (skipNextSaveRef.current) {
+            skipNextSaveRef.current = false;
+            return;
+        }
+
         clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
             putChatSession(selectedDoc.document_id, {
@@ -560,24 +583,62 @@ export default function DocumentChatPage() {
         }, 800);
 
         return () => clearTimeout(saveTimer.current);
-    }, [messages, selectedDoc]);
+    }, [messages, selectedDoc, sessionLoading]);
 
-    // When a document is selected, clear previous chat and sync URL
-    const handleSelectDoc = useCallback((doc) => {
+    /**
+     * Open a document AND restore its saved conversation.
+     *
+     * Opening used to just clearChat(), which left an empty transcript. The
+     * next completed exchange then PUT that near-empty transcript over the
+     * document's stored session — an upsert replaces — so every prior Q&A
+     * for that document was destroyed the moment you asked a follow-up in a
+     * new page load. The fetch below is what makes reopening a resume rather
+     * than a reset.
+     */
+    const openDocument = useCallback(async (doc) => {
+        const seq = ++loadSeqRef.current;
+
         setSelectedDoc(doc);
         setHighlightedChunk(null);
         clearChat();
-        navigate(`/chat/${doc.document_id}`, { replace: true });
-    }, [clearChat, navigate]);
+        setSessionLoading(true);
 
-    // Auto-select document from URL param (e.g. arriving from DocumentsPage)
+        try {
+            const saved = await fetchChatSession(doc.document_id);
+            // A newer open won the race (user clicked through documents
+            // quickly) — discard this response rather than showing the wrong
+            // document's transcript.
+            if (seq !== loadSeqRef.current) return;
+
+            if (saved?.messages?.length) {
+                // Restoring is not an edit, so it must not trigger a save.
+                skipNextSaveRef.current = true;
+                loadMessages(saved.messages);
+            }
+        } catch (err) {
+            // 404 simply means this document has no conversation yet.
+            const code = err?.response?.status;
+            if (code !== 404 && code !== 401) {
+                console.error("[DocumentChatPage] could not load saved session:", err);
+            }
+        } finally {
+            if (seq === loadSeqRef.current) setSessionLoading(false);
+        }
+    }, [clearChat, loadMessages]);
+
+    // When a document is selected, restore its chat and sync URL
+    const handleSelectDoc = useCallback((doc) => {
+        openDocument(doc);
+        navigate(`/chat/${doc.document_id}`, { replace: true });
+    }, [openDocument, navigate]);
+
+    // Auto-select document from URL param (e.g. arriving from DocumentsPage,
+    // or a page reload straight onto /chat/:documentId)
     useEffect(() => {
         if (documentId && documents.length > 0) {
             const match = documents.find((d) => d.document_id === documentId);
             if (match && match.document_id !== selectedDoc?.document_id) {
-                setSelectedDoc(match);
-                setHighlightedChunk(null);
-                clearChat();
+                openDocument(match);
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps

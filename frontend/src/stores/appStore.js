@@ -147,6 +147,15 @@ export const useAppStore = create(
         /** Clear entire conversation */
         clearChat: () => set({ messages: [], streamingId: null }),
 
+        /**
+         * Replace the transcript wholesale — used when reopening a document
+         * to restore its saved server-side conversation, so the user
+         * continues where they left off instead of starting a blank chat
+         * that would then overwrite their history on the next save.
+         */
+        loadMessages: (messages) =>
+          set({ messages: Array.isArray(messages) ? messages : [], streamingId: null }),
+
         /** Internal helpers */
         _appendMessage: (msg) =>
           set((s) => ({ messages: [...s.messages, msg] })),
