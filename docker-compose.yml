@@ -1,19 +1,38 @@
-version: "3.9"
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Local development stack
-#   • backend  — FastAPI RAG API (hot-reload via volume mount)
+#   • postgres — Users, document records, chat sessions
+#   • redis    — Embedding cache
+#   • backend  — FastAPI RAG API (JWT auth)
 #   • frontend — React (Vite dev server)
-#   • redis    — Cache + rate limiting
 #   • nginx    — Reverse proxy / static file server
 #
 # Usage:
-#   cp backend/.env.example backend/.env   # fill in API keys
+#   Create backend/.env with PINECONE_API_KEY, GEMINI_API_KEY and SECRET_KEY
+#   (see README "Configuration"), then:
 #   docker compose up --build
 #   Open http://localhost
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # Auth landed after this file was first written. Without a real database the
+  # backend falls back to a SQLite file INSIDE the container, so every account
+  # is destroyed on `docker compose down`.
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     deepcontext
+      POSTGRES_PASSWORD: deepcontext
+      POSTGRES_DB:       deepcontext
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deepcontext -d deepcontext"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Redis ──────────────────────────────────────────────────────────────────
   redis:
@@ -34,18 +53,27 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: app/Dockerfile
       target: runtime         # use 'builder' for a dev image with all tools
     restart: unless-stopped
     env_file: ./backend/.env
     environment:
-      REDIS_URL:   "redis://redis:6379/0"
-      RELOAD:      "false"     # set to "true" + uncomment volume for hot-reload
-      LOG_JSON:    "false"
-      WORKERS:     "1"
+      # These override backend/.env, which is loaded above via env_file.
+      # Everything else (PINECONE_API_KEY, GEMINI_API_KEY, SECRET_KEY, JWT_*)
+      # is inherited from that file.
+      DATABASE_URL: "postgresql+asyncpg://deepcontext:deepcontext@postgres:5432/deepcontext"
+      REDIS_URL:    "redis://redis:6379/0"
+      RELOAD:       "false"    # set to "true" + uncomment volume for hot-reload
+      LOG_JSON:     "false"
+      WORKERS:      "1"
+      # requirements.txt no longer ships torch/sentence-transformers, so Stage 2
+      # is off unless you also install requirements-reranker.txt in the image.
+      RERANKER_ENABLED: "False"
     ports:
       - "8000:8000"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -85,3 +113,4 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
