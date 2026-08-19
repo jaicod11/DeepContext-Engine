@@ -194,8 +194,33 @@ async def async_client(app) -> AsyncGenerator[AsyncClient, None]:
 # ──────────────────────────────────────────────
 
 @pytest.fixture
-def auth_headers() -> dict[str, str]:
-    return {"X-API-Key": "test-key-abc123"}
+def auth_headers(client) -> dict[str, str]:
+    """
+    Bearer token for a real test account.
+
+    These integration tests were written against the pre-auth shared-secret
+    scheme and sent {"X-API-Key": ...}, which every user-facing route now
+    rejects with 401 — the backend authenticates users individually via JWT.
+    Registering a throwaway account here keeps the tests exercising the real
+    auth path instead of a header the app no longer honours.
+    """
+    import uuid
+
+    email = f"pytest_{uuid.uuid4().hex[:10]}@example.com"
+    password = "PytestPass123!"
+
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": password, "full_name": "pytest"},
+    )
+    if resp.status_code >= 400:
+        # Account already exists (re-run against a persistent dev DB)
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password},
+        )
+    resp.raise_for_status()
+    return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
 # ──────────────────────────────────────────────

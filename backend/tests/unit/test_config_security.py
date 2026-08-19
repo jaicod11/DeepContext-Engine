@@ -27,12 +27,27 @@ class TestSettings:
         assert settings.reranker_top_n <= settings.retrieval_top_k
 
     def test_api_keys_parsed_from_comma_string(self):
+        """
+        api_keys is stored as a raw str and split by the api_key_list property.
+        It is NOT list-typed: pydantic-settings JSON-decodes complex fields
+        inside EnvSettingsSource before any validator runs, so a plain
+        "a,b,c" env value used to crash startup outright.
+        """
         from app.core.config import Settings
         s = Settings(
             pinecone_api_key="key",
-            api_keys="abc,def, ghi ",  # type: ignore[arg-type]
+            api_keys="abc,def, ghi ",
         )
-        assert s.api_keys == ["abc", "def", "ghi"]
+        assert s.api_key_list == ["abc", "def", "ghi"]
+
+    def test_api_keys_parsed_from_json_array(self):
+        """The JSON-array form existing .env files use must keep working."""
+        from app.core.config import Settings
+        s = Settings(
+            pinecone_api_key="key",
+            api_keys='["abc","def"]',
+        )
+        assert s.api_key_list == ["abc", "def"]
 
     def test_chunk_overlap_must_be_less_than_chunk_size(self):
         from app.core.config import Settings
@@ -52,13 +67,23 @@ class TestSettings:
                 reranker_top_n=10,
             )
 
-    def test_production_guard_requires_api_keys(self):
+    def test_production_guard_requires_secret_key(self):
+        """
+        Production refuses to boot without an explicit SECRET_KEY — the
+        default_factory would mint a new one per process and silently
+        invalidate every issued JWT on restart.
+
+        (This replaces a test for an "api_keys must not be empty" guard that
+        no longer exists in config.py — shared-secret auth was superseded by
+        per-user JWTs.)
+        """
         from app.core.config import Environment, Settings
-        with pytest.raises(ValueError, match="api_keys must not be empty"):
+        with pytest.raises(ValueError, match="SECRET_KEY is not set"):
             Settings(
+                _env_file=None,
                 pinecone_api_key="key",
+                gemini_api_key="key",
                 environment=Environment.PRODUCTION,
-                api_keys=[],
                 debug=False,
                 reload=False,
             )
@@ -73,7 +98,7 @@ class TestSettings:
         s = Settings(
             pinecone_api_key="key",
             environment=Environment.PRODUCTION,
-            api_keys=["abc"],
+            api_keys="abc",
             debug=False,
             reload=False,
         )

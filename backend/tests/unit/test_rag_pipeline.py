@@ -158,7 +158,11 @@ class TestRAGChain:
         assert isinstance(result, RAGResponse)
         assert len(result.answer) > 0
         assert isinstance(result.sources, list)
-        assert result.latency_ms > 0
+        # Every dependency here is mocked, so the pipeline can complete in
+        # under a millisecond and latency_ms floors to 0. Assert the field is
+        # present and sane rather than strictly positive, which was flaky.
+        assert isinstance(result.latency_ms, int)
+        assert result.latency_ms >= 0
 
     @pytest.mark.asyncio
     async def test_run_no_chunks_returns_fallback(
